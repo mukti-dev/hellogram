@@ -1,0 +1,110 @@
+import { Avatar, LabelChip, cn } from '@hellogram/ui';
+import { Mic, MicOff, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
+import { useNow } from '../../../shared/use-now.js';
+import { t } from '../../../i18n/t.js';
+import { labelName } from '../../../shared/format.js';
+import { useCallStore } from '../model/call-store.js';
+
+function useTimer(startedAt: number | null) {
+  const now = useNow(1000);
+  if (!startedAt) return '00:00';
+  const s = Math.max(0, Math.floor((now - startedAt) / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function RoundButton({ label, onClick, tone, children }: { label: string; onClick: () => void; tone: 'red' | 'green' | 'glass'; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        className={cn(
+          'inline-flex size-18 items-center justify-center rounded-full text-white shadow-xl transition active:scale-95',
+          tone === 'red' && 'bg-[#EF4444] hover:brightness-110',
+          tone === 'green' && 'bg-[#22C55E] hover:brightness-110',
+          tone === 'glass' && 'bg-white/15 hover:bg-white/25',
+        )}
+      >
+        {children}
+      </button>
+      <span className="text-sm text-white/80">{label}</span>
+    </div>
+  );
+}
+
+/** Screens 12: incoming, outgoing/ringing and in-call — full-screen overlay. */
+export function CallOverlay() {
+  const s = useCallStore();
+  const timer = useTimer(s.startedAt);
+  if (s.phase === 'idle' || !s.party) return null;
+
+  const label = s.party.labelKind ? labelName({ labelKind: s.party.labelKind, labelText: s.party.labelText }) : null;
+  const status =
+    s.phase === 'incoming'
+      ? t('calls.incoming')
+      : s.phase === 'outgoing'
+        ? t('calls.calling')
+        : s.phase === 'connecting'
+          ? t('calls.connecting')
+          : s.phase === 'active'
+            ? timer
+            : s.endedLabel;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={status ?? ''}
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-between bg-[radial-gradient(120%_90%_at_50%_0%,#3B2A8C_0%,#1A1440_45%,#0B0B14_100%)] px-6 py-12 text-white"
+    >
+      <div className="flex flex-col items-center text-center">
+        <p className="text-base text-white/80" aria-live="polite">{status}</p>
+        <div className="mt-8 rounded-full p-1.5 ring-4 ring-white/10">
+          <Avatar name={s.party.name} src={s.party.avatarUrl} size={120} />
+        </div>
+        <h1 className="mt-6 text-3xl font-bold">{s.party.name}</h1>
+        {label && s.party.labelKind && (
+          <LabelChip
+            kind={s.party.labelKind as 'olx' | 'dating' | 'tenants' | 'other'}
+            text={label}
+            prefix={t('chat.via')}
+            className="mt-3 bg-white/15 text-white"
+          />
+        )}
+        {s.party.code && (
+          <p className="mt-2 font-mono text-sm text-white/75">
+            {s.direction === 'incoming' ? t('calls.to', { code: s.party.code }) : s.party.code}
+          </p>
+        )}
+      </div>
+
+      <div className="flex w-full max-w-sm flex-col items-center gap-8">
+        {s.phase === 'incoming' && (
+          <div className="flex w-full justify-around">
+            <RoundButton label={t('calls.decline')} tone="red" onClick={() => void s.decline()}>
+              <PhoneOff className="size-8" aria-hidden />
+            </RoundButton>
+            <RoundButton label={t('calls.accept')} tone="green" onClick={() => void s.accept()}>
+              <Phone className="size-8" aria-hidden />
+            </RoundButton>
+          </div>
+        )}
+        {(s.phase === 'outgoing' || s.phase === 'connecting' || s.phase === 'active') && (
+          <div className="flex w-full justify-around">
+            <RoundButton label={s.muted ? t('calls.unmute') : t('calls.mute')} tone="glass" onClick={s.toggleMute}>
+              {s.muted ? <MicOff className="size-7" aria-hidden /> : <Mic className="size-7" aria-hidden />}
+            </RoundButton>
+            <RoundButton label={t('calls.end')} tone="red" onClick={() => void s.hangUp()}>
+              <PhoneOff className="size-8" aria-hidden />
+            </RoundButton>
+          </div>
+        )}
+        <p className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">
+          <ShieldCheck className="size-4" aria-hidden />
+          {t('calls.hidden')}
+        </p>
+      </div>
+    </div>
+  );
+}

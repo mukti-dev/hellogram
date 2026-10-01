@@ -1,0 +1,645 @@
+// Hellogram data model — see docs/ARCHITECTURE.md §5.
+// Conventions: snake_case tables, timestamptz, email lower-cased, phone in E.164.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum AccountStatus {
+  active
+  suspended
+  banned
+  deleted
+}
+
+enum OtpChannel {
+  sms
+  email
+}
+
+enum OtpPurpose {
+  login
+  email_login
+  email_verify
+  pin_reset
+  phone_change
+  account_delete
+}
+
+enum PersonaStatus {
+  active
+  paused
+  retired
+}
+
+enum PauseReason {
+  user
+  billing
+  admin
+}
+
+enum LabelKind {
+  olx
+  dating
+  tenants
+  other
+}
+
+enum Retention {
+  forever
+  d90
+  d30
+  d7
+  h24
+}
+
+enum RequestStatus {
+  pending
+  accepted
+  declined
+  blocked
+  expired
+}
+
+enum MessageType {
+  text
+  system
+}
+
+enum CallStatus {
+  ringing
+  answered
+  missed
+  declined
+  ended
+  failed
+}
+
+enum CallEndReason {
+  completed
+  no_answer
+  busy
+  declined
+  cancelled
+  network_error
+  suppressed
+}
+
+enum ReportReason {
+  harassment
+  spam
+  scam
+  sexual_content
+  threat
+  other
+}
+
+enum ReportStatus {
+  open
+  reviewing
+  actioned
+  dismissed
+}
+
+enum SubStatus {
+  created
+  authenticated
+  active
+  past_due
+  grace
+  cancelled
+  completed
+}
+
+enum AdminRole {
+  moderator
+  admin
+  grievance_officer
+}
+
+enum ActorType {
+  system
+  admin
+  account
+}
+
+enum AccountAction {
+  warn
+  suspend
+  unsuspend
+  ban
+  unban
+}
+
+enum GrievanceStatus {
+  open
+  acknowledged
+  resolved
+  closed
+}
+
+enum ExportStatus {
+  pending
+  ready
+  expired
+  failed
+}
+
+// ──────────────────────────── Accounts ───────────────────────────
+
+model Account {
+  id              String        @id @default(uuid()) @db.Uuid
+  phone           String        @unique
+  email           String?       @unique
+  emailVerifiedAt DateTime?     @db.Timestamptz
+  ageConfirmedAt  DateTime      @db.Timestamptz
+  status          AccountStatus @default(active)
+  suspendedUntil  DateTime?     @db.Timestamptz
+  createdAt       DateTime      @default(now()) @db.Timestamptz
+  updatedAt       DateTime      @updatedAt @db.Timestamptz
+  deletedAt       DateTime?     @db.Timestamptz
+
+  sessions       Session[]
+  consents       ConsentRecord[]
+  phoneChanges   PhoneChange[]
+  personas       Persona[]
+  blocksMade     Block[]            @relation("BlocksMade")
+  blocksReceived Block[]            @relation("BlocksReceived")
+  subscriptions  Subscription[]
+  pushSubs       PushSubscription[]
+  actions        AccountActionLog[]
+  exports        DataExport[]
+  personaDrafts  PersonaDraft[]
+
+  @@map("accounts")
+}
+
+model ConsentRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @db.Uuid
+  version    String
+  acceptedAt DateTime @default(now()) @db.Timestamptz
+  ipHash     String?
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("consent_records")
+}
+
+model PhoneChange {
+  id          String    @id @default(uuid()) @db.Uuid
+  accountId   String    @db.Uuid
+  newPhone    String
+  verifiedAt  DateTime  @db.Timestamptz
+  effectiveAt DateTime  @db.Timestamptz
+  completedAt DateTime? @db.Timestamptz
+  cancelledAt DateTime? @db.Timestamptz
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("phone_changes")
+}
+
+model Session {
+  id           String         @id @default(uuid()) @db.Uuid
+  accountId    String         @db.Uuid
+  deviceName   String?
+  userAgent    String?
+  ipHash       String?
+  createdAt    DateTime       @default(now()) @db.Timestamptz
+  lastSeenAt   DateTime       @default(now()) @db.Timestamptz
+  expiresAt    DateTime       @db.Timestamptz
+  revokedAt    DateTime?      @db.Timestamptz
+  revokeReason String?
+  account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokens       RefreshToken[]
+
+  @@index([accountId])
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  sessionId String    @db.Uuid
+  tokenHash String    @unique
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  usedAt    DateTime? @db.Timestamptz
+  session   Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("refresh_tokens")
+}
+
+model OtpChallenge {
+  id         String     @id @default(uuid()) @db.Uuid
+  channel    OtpChannel
+  targetHash String
+  purpose    OtpPurpose
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @db.Timestamptz
+  consumedAt DateTime?  @db.Timestamptz
+  ipHash     String?
+  createdAt  DateTime   @default(now()) @db.Timestamptz
+
+  @@index([targetHash, purpose, createdAt])
+  @@map("otp_challenges")
+}
+
+// ──────────────────────────── Personas ───────────────────────────
+
+model Persona {
+  id               String        @id @default(uuid()) @db.Uuid
+  accountId        String        @db.Uuid
+  code             String        @unique @db.VarChar(9)
+  displayName      String        @db.VarChar(40)
+  avatarKey        String?
+  labelKind        LabelKind     @default(other)
+  labelText        String?       @db.VarChar(16)
+  status           PersonaStatus @default(active)
+  pauseReason      PauseReason?
+  isPaid           Boolean       @default(false)
+  acceptRequests   Boolean       @default(true)
+  allowCalls       Boolean       @default(true)
+  readReceipts     Boolean       @default(true)
+  dndUntil         DateTime?     @db.Timestamptz
+  defaultRetention Retention     @default(d30)
+  pinHash          String?
+  pinFailedCount   Int           @default(0)
+  pinLockLevel     Int           @default(0)
+  pinLockedUntil   DateTime?     @db.Timestamptz
+  createdAt        DateTime      @default(now()) @db.Timestamptz
+  updatedAt        DateTime      @updatedAt @db.Timestamptz
+  retiredAt        DateTime?     @db.Timestamptz
+
+  account          Account              @relation(fields: [accountId], references: [id])
+  requestsSent     ContactRequest[]     @relation("RequestFrom")
+  requestsReceived ContactRequest[]     @relation("RequestTo")
+  convsAsA         Conversation[]       @relation("ConvA")
+  convsAsB         Conversation[]       @relation("ConvB")
+  memberships      ConversationMember[]
+  messagesSent     Message[]
+  callsMade        Call[]               @relation("CallFrom")
+  callsReceived    Call[]               @relation("CallTo")
+  blocksFrom       Block[]              @relation("BlockFromPersona")
+  blocksOf         Block[]              @relation("BlockOfPersona")
+  reportsMade      Report[]             @relation("ReportBy")
+  reportsAgainst   Report[]             @relation("ReportAgainst")
+
+  @@index([accountId, status])
+  @@map("personas")
+}
+
+model RetiredCode {
+  code      String   @id @db.VarChar(9)
+  retiredAt DateTime @default(now()) @db.Timestamptz
+
+  @@map("retired_codes")
+}
+
+model PersonaDraft {
+  id          String    @id @default(uuid()) @db.Uuid
+  accountId   String    @db.Uuid
+  displayName String    @db.VarChar(40)
+  labelKind   LabelKind
+  labelText   String?   @db.VarChar(16)
+  allowCalls  Boolean   @default(true)
+  providerRef       String?
+  expiresAt         DateTime  @db.Timestamptz
+  consumedAt        DateTime? @db.Timestamptz
+  consumedPersonaId String?   @db.Uuid
+  account           Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([providerRef])
+  @@map("persona_drafts")
+}
+
+// ──────────────────────── Requests & chats ───────────────────────
+
+model ContactRequest {
+  id            String        @id @default(uuid()) @db.Uuid
+  fromPersonaId String        @db.Uuid
+  toPersonaId   String        @db.Uuid
+  introMessage  String        @db.VarChar(300)
+  status        RequestStatus @default(pending)
+  suppressed    Boolean       @default(false)
+  createdAt     DateTime      @default(now()) @db.Timestamptz
+  respondedAt   DateTime?     @db.Timestamptz
+  expiresAt     DateTime      @db.Timestamptz
+  from          Persona       @relation("RequestFrom", fields: [fromPersonaId], references: [id])
+  to            Persona       @relation("RequestTo", fields: [toPersonaId], references: [id])
+
+  @@index([toPersonaId, status, createdAt])
+  @@index([fromPersonaId, toPersonaId, createdAt])
+  @@map("contact_requests")
+}
+
+model Conversation {
+  id                   String     @id @default(uuid()) @db.Uuid
+  personaAId           String     @db.Uuid
+  personaBId           String     @db.Uuid
+  retention            Retention
+  retentionChangedById String?    @db.Uuid
+  retentionChangedAt   DateTime?  @db.Timestamptz
+  lastMessageAt        DateTime?  @db.Timestamptz
+  createdAt            DateTime   @default(now()) @db.Timestamptz
+  closedAt             DateTime?  @db.Timestamptz
+  personaA             Persona    @relation("ConvA", fields: [personaAId], references: [id])
+  personaB             Persona    @relation("ConvB", fields: [personaBId], references: [id])
+  members              ConversationMember[]
+  messages             Message[]
+  calls                Call[]
+
+  @@unique([personaAId, personaBId])
+  @@index([personaBId])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId         String       @db.Uuid
+  personaId              String       @db.Uuid
+  nickname               String?      @db.VarChar(40)
+  clearedBefore          DateTime?    @db.Timestamptz
+  mutedUntil             DateTime?    @db.Timestamptz
+  lastReadMessageId      String?      @db.Uuid
+  lastDeliveredMessageId String?      @db.Uuid
+  hiddenAt               DateTime?    @db.Timestamptz
+  counterpartMasked      Boolean      @default(false)
+  conversation           Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  persona                Persona      @relation(fields: [personaId], references: [id])
+
+  @@id([conversationId, personaId])
+  @@index([personaId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id                   String        @id @default(uuid(7)) @db.Uuid
+  conversationId       String        @db.Uuid
+  senderPersonaId      String        @db.Uuid
+  clientMessageId      String        @db.VarChar(64)
+  type                 MessageType   @default(text)
+  body                 String?       @db.VarChar(4000)
+  systemPayload        Json?
+  suppressed           Boolean       @default(false)
+  createdAt            DateTime      @default(now()) @db.Timestamptz
+  deliveredAt          DateTime?     @db.Timestamptz
+  readAt               DateTime?     @db.Timestamptz
+  deletedForEveryoneAt DateTime?     @db.Timestamptz
+  contentPurgedAt      DateTime?     @db.Timestamptz
+  conversation         Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender               Persona       @relation(fields: [senderPersonaId], references: [id])
+  hiddenFor            MessageHide[]
+
+  @@unique([senderPersonaId, clientMessageId])
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model MessageHide {
+  messageId String   @db.Uuid
+  personaId String   @db.Uuid
+  hiddenAt  DateTime @default(now()) @db.Timestamptz
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, personaId])
+  @@map("message_hides")
+}
+
+// ─────────────────────────────── Calls ───────────────────────────
+
+model Call {
+  id              String         @id @default(uuid()) @db.Uuid
+  conversationId  String         @db.Uuid
+  callerPersonaId String         @db.Uuid
+  calleePersonaId String         @db.Uuid
+  status          CallStatus     @default(ringing)
+  endReason       CallEndReason?
+  suppressed      Boolean        @default(false)
+  createdAt       DateTime       @default(now()) @db.Timestamptz
+  answeredAt      DateTime?      @db.Timestamptz
+  endedAt         DateTime?      @db.Timestamptz
+  conversation    Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  caller          Persona        @relation("CallFrom", fields: [callerPersonaId], references: [id])
+  callee          Persona        @relation("CallTo", fields: [calleePersonaId], references: [id])
+
+  @@index([conversationId])
+  @@index([callerPersonaId, createdAt])
+  @@index([calleePersonaId, createdAt])
+  @@index([createdAt])
+  @@map("calls")
+}
+
+// ───────────────────────────── Safety ────────────────────────────
+
+model Block {
+  id               String   @id @default(uuid()) @db.Uuid
+  blockerAccountId String   @db.Uuid
+  blockedAccountId String   @db.Uuid
+  blockerPersonaId String   @db.Uuid
+  blockedPersonaId String   @db.Uuid
+  conversationId   String?  @db.Uuid
+  requestId        String?  @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz
+  blockerAccount   Account  @relation("BlocksMade", fields: [blockerAccountId], references: [id])
+  blockedAccount   Account  @relation("BlocksReceived", fields: [blockedAccountId], references: [id])
+  blockerPersona   Persona  @relation("BlockFromPersona", fields: [blockerPersonaId], references: [id])
+  blockedPersona   Persona  @relation("BlockOfPersona", fields: [blockedPersonaId], references: [id])
+
+  @@unique([blockerPersonaId, blockedPersonaId])
+  @@index([blockerAccountId, blockedAccountId])
+  @@index([blockedAccountId, blockerAccountId])
+  @@index([blockedPersonaId])
+  @@map("blocks")
+}
+
+model Report {
+  id                String          @id @default(uuid()) @db.Uuid
+  reporterPersonaId String          @db.Uuid
+  reportedPersonaId String          @db.Uuid
+  conversationId    String?         @db.Uuid
+  requestId         String?         @db.Uuid
+  reason            ReportReason
+  note              String?         @db.VarChar(1000)
+  alsoBlocked       Boolean         @default(true)
+  status            ReportStatus    @default(open)
+  handledByAdminId  String?         @db.Uuid
+  createdAt         DateTime        @default(now()) @db.Timestamptz
+  closedAt          DateTime?       @db.Timestamptz
+  reporter          Persona         @relation("ReportBy", fields: [reporterPersonaId], references: [id])
+  reported          Persona         @relation("ReportAgainst", fields: [reportedPersonaId], references: [id])
+  evidence          ReportEvidence?
+
+  @@index([status, createdAt])
+  @@index([reporterPersonaId])
+  @@index([reportedPersonaId])
+  @@map("reports")
+}
+
+model ReportEvidence {
+  id        String   @id @default(uuid()) @db.Uuid
+  reportId  String   @unique @db.Uuid
+  snapshot  Json
+  createdAt DateTime @default(now()) @db.Timestamptz
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("report_evidence")
+}
+
+// ───────────────────────────── Billing ───────────────────────────
+
+model Subscription {
+  id               String    @id @default(uuid()) @db.Uuid
+  accountId        String    @db.Uuid
+  provider         String    @default("razorpay")
+  providerSubId    String    @unique
+  quantity         Int
+  status           SubStatus
+  currentPeriodEnd DateTime? @db.Timestamptz
+  graceUntil       DateTime? @db.Timestamptz
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @db.Timestamptz
+  account          Account   @relation(fields: [accountId], references: [id])
+  payments         Payment[]
+
+  @@index([accountId, status])
+  @@map("subscriptions")
+}
+
+// Retained 8 years (tax). The account row is anonymised on deletion, never hard-deleted.
+model Payment {
+  id                String       @id @default(uuid()) @db.Uuid
+  subscriptionId    String       @db.Uuid
+  amountPaise       Int
+  gstPaise          Int
+  invoiceNo         String       @unique
+  providerPaymentId String       @unique
+  paidAt            DateTime     @db.Timestamptz
+  subscription      Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@map("payments")
+}
+
+model WebhookEvent {
+  id          String    @id
+  provider    String
+  type        String
+  payload     Json
+  receivedAt  DateTime  @default(now()) @db.Timestamptz
+  processedAt DateTime? @db.Timestamptz
+
+  @@map("webhook_events")
+}
+
+// ────────────────────────── Notifications ────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  accountId String   @db.Uuid
+  sessionId String?  @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @db.Timestamptz
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("push_subscriptions")
+}
+
+// ────────────────────────── Compliance / admin ───────────────────
+
+model DataExport {
+  id        String       @id @default(uuid()) @db.Uuid
+  accountId String       @db.Uuid
+  status    ExportStatus @default(pending)
+  s3Key     String?
+  expiresAt DateTime?    @db.Timestamptz
+  createdAt DateTime     @default(now()) @db.Timestamptz
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("data_exports")
+}
+
+model AdminUser {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  role         AdminRole
+  passwordHash String
+  totpSecret   String
+  disabledAt   DateTime? @db.Timestamptz
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+
+  @@map("admin_users")
+}
+
+model AccountActionLog {
+  id        String        @id @default(uuid()) @db.Uuid
+  accountId String        @db.Uuid
+  adminId   String        @db.Uuid
+  action    AccountAction
+  reason    String
+  until     DateTime?     @db.Timestamptz
+  reportId  String?       @db.Uuid
+  createdAt DateTime      @default(now()) @db.Timestamptz
+  account   Account       @relation(fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@map("account_actions")
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  actorType  ActorType
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  meta       Json?
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model GrievanceTicket {
+  id                 String          @id @default(uuid()) @db.Uuid
+  complainantContact String
+  subject            String
+  body               String
+  status             GrievanceStatus @default(open)
+  ackDueAt           DateTime        @db.Timestamptz
+  resolveDueAt       DateTime        @db.Timestamptz
+  ackAt              DateTime?       @db.Timestamptz
+  resolvedAt         DateTime?       @db.Timestamptz
+  createdAt          DateTime        @default(now()) @db.Timestamptz
+
+  @@index([status, ackDueAt])
+  @@map("grievance_tickets")
+}
+
+model LegalRequest {
+  id          String    @id @default(uuid()) @db.Uuid
+  authority   String
+  referenceNo String
+  scope       String
+  receivedAt  DateTime  @db.Timestamptz
+  respondedAt DateTime? @db.Timestamptz
+  handledById String?   @db.Uuid
+  notes       String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+
+  @@map("legal_requests")
+}

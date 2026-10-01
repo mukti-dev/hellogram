@@ -1,0 +1,33 @@
+{
+  "name": "hellogram",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "eslint .",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "db:generate": "pnpm --filter @hellogram/db generate",
+    "db:migrate": "pnpm --filter @hellogram/db migrate:dev",
+    "db:seed": "pnpm --filter @hellogram/db seed"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "turbo": "^2.11.4",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2"
+  }
+}

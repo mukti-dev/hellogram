@@ -1,0 +1,107 @@
+/*
+ * Hellogram theme — CSS variables + Tailwind v4 theme mapping.
+ * Import once from the app entry CSS after `@import "tailwindcss";`.
+ * Mirrors src/tokens.ts.
+ */
+
+:root,
+[data-theme='light'] {
+  --hg-bg: #f7f7fb;
+  --hg-surface-1: #ffffff;
+  --hg-surface-2: #f0f0f6;
+  --hg-surface-3: #e8e8f1;
+  --hg-border: #e3e3ec;
+  --hg-text: #12121a;
+  --hg-text-muted: #5e5e72;
+  --hg-primary: #6a48f5;
+  --hg-primary-soft: #6a48f51f;
+  /* Light theme uses darker tones so small text keeps ≥ 4.5:1 contrast (WCAG AA). */
+  --hg-success: #166534;
+  --hg-warning: #92400e;
+  --hg-danger: #dc2626;
+  --hg-label-olx: #92400e;
+  --hg-label-dating: #9d174d;
+  --hg-label-tenants: #1e40af;
+  --hg-label-other: #374151;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --hg-bg: #0b0b14;
+  --hg-surface-1: #14141f;
+  --hg-surface-2: #1a1a28;
+  --hg-surface-3: #232334;
+  --hg-border: #2a2a3a;
+  --hg-text: #f4f4f8;
+  --hg-text-muted: #9a9ab0;
+  --hg-primary: #7c5cff;
+  --hg-primary-soft: #7c5cff29;
+  --hg-success: #22c55e;
+  --hg-warning: #f5a524;
+  --hg-danger: #ef4444;
+  --hg-label-olx: #f59e0b;
+  --hg-label-dating: #ec4899;
+  --hg-label-tenants: #60a5fa;
+  --hg-label-other: #9a9ab0;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--hg-bg);
+  --color-surface-1: var(--hg-surface-1);
+  --color-surface-2: var(--hg-surface-2);
+  --color-surface-3: var(--hg-surface-3);
+  --color-border: var(--hg-border);
+  --color-fg: var(--hg-text);
+  --color-muted: var(--hg-text-muted);
+  --color-primary: var(--hg-primary);
+  --color-primary-soft: var(--hg-primary-soft);
+  --color-success: var(--hg-success);
+  --color-warning: var(--hg-warning);
+  --color-danger: var(--hg-danger);
+
+  --color-label-olx: var(--hg-label-olx);
+  --color-label-dating: var(--hg-label-dating);
+  --color-label-tenants: var(--hg-label-tenants);
+  --color-label-other: var(--hg-label-other);
+
+  --font-sans: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+@utility bg-gradient-primary {
+  background-image: linear-gradient(90deg, #4f8bff 0%, #8b5cf6 55%, #e056c8 100%);
+}
+
+@utility text-gradient-primary {
+  background-image: linear-gradient(90deg, #4f8bff 0%, #8b5cf6 55%, #e056c8 100%);
+  background-clip: text;
+  color: transparent;
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--hg-bg);
+    color: var(--hg-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--hg-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* Horizontally scrollable rows (filter chips) without a visible scrollbar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

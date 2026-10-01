@@ -1,0 +1,63 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hellogram/api",
+        "dev"
+      ],
+      "port": 4000
+    },
+    {
+      "name": "worker",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hellogram/worker",
+        "dev"
+      ]
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hellogram/web",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "turn",
+      "runtimeExecutable": "turnserver",
+      "runtimeArgs": [
+        "-c",
+        "infra/coturn/turnserver.local.conf"
+      ],
+      "port": 3478
+    },
+    {
+      "name": "admin-api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hellogram/admin-api",
+        "dev"
+      ],
+      "port": 4100
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hellogram/admin",
+        "dev"
+      ],
+      "port": 5174
+    }
+  ]
+}

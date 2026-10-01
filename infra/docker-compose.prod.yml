@@ -1,0 +1,78 @@
+# Single-server production (e.g. AWS Lightsail 4 GB, Mumbai). docs/RUNBOOKS.md → "Deploy".
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production up -d --build
+name: hellogram-prod
+
+x-app: &app
+  restart: unless-stopped
+  env_file: .env.production
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  caddy:
+    build: { context: .., dockerfile: infra/docker/Dockerfile, target: caddy }
+    restart: unless-stopped
+    env_file: .env.production
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [caddy-data:/data, caddy-config:/config]
+    depends_on: [api, admin-api]
+
+  api:
+    <<: *app
+    build: { context: .., dockerfile: infra/docker/Dockerfile, target: api }
+    environment: { MEDIA_DIR: /data/media, HOST: 0.0.0.0 }
+    volumes: [media:/data/media]
+
+  worker:
+    <<: *app
+    build: { context: .., dockerfile: infra/docker/Dockerfile, target: worker }
+
+  admin-api:
+    <<: *app
+    build: { context: .., dockerfile: infra/docker/Dockerfile, target: admin-api }
+    environment: { HOST: 0.0.0.0 }
+
+  migrate:
+    build: { context: .., dockerfile: infra/docker/Dockerfile, target: migrate }
+    env_file: .env.production
+    depends_on: { postgres: { condition: service_healthy } }
+    profiles: [tools]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hellogram
+      POSTGRES_DB: hellogram
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U hellogram"], interval: 10s, retries: 10 }
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redis-data:/data]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, retries: 10 }
+
+  coturn:
+    image: coturn/coturn:4.18-alpine
+    restart: unless-stopped
+    network_mode: host
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf:ro
+      - caddy-data:/etc/coturn/caddy:ro
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+
+volumes:
+  postgres-data:
+  redis-data:
+  media:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,38 @@
+import type {
+  ConversationDto,
+  InboxDto,
+  LabelKind,
+  MessageDto,
+  MessagePageDto,
+  UpdateConversationBody,
+} from '@hellogram/shared';
+import { api } from '../../../core/http/client.js';
+
+export interface InboxFilter {
+  label?: LabelKind;
+  unread?: boolean;
+  q?: string;
+}
+
+const qs = (params: Record<string, string | boolean | undefined>) => {
+  const search = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '' && v !== false) search.set(k, String(v));
+  const s = search.toString();
+  return s ? `?${s}` : '';
+};
+
+export const chatApi = {
+  inbox: (filter: InboxFilter, cursor?: string) => api<InboxDto>(`/v1/conversations${qs({ ...filter, cursor })}`),
+  unreadCount: () => api<{ count: number }>('/v1/conversations/unread-count'),
+  get: (id: string) => api<ConversationDto>(`/v1/conversations/${id}`),
+  messages: (id: string, cursor?: string) => api<MessagePageDto>(`/v1/conversations/${id}/messages${qs({ cursor })}`),
+  send: (id: string, clientMessageId: string, body: string) =>
+    api<MessageDto>(`/v1/conversations/${id}/messages`, { method: 'POST', body: { clientMessageId, body } }),
+  read: (id: string, upToMessageId: string) =>
+    api<void>(`/v1/conversations/${id}/read`, { method: 'POST', body: { upToMessageId } }),
+  ack: (messageIds: string[]) => api<void>('/v1/messages/ack', { method: 'POST', body: { messageIds } }),
+  update: (id: string, body: UpdateConversationBody) =>
+    api<ConversationDto>(`/v1/conversations/${id}`, { method: 'PATCH', body }),
+  clear: (id: string) => api<void>(`/v1/conversations/${id}/clear`, { method: 'POST' }),
+  deleteMessage: (id: string, scope: 'me' | 'everyone') => api<void>(`/v1/messages/${id}?scope=${scope}`, { method: 'DELETE' }),
+};

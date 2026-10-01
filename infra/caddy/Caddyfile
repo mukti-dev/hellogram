@@ -1,0 +1,64 @@
+# Production reverse proxy. Set APP_DOMAIN and ADMIN_DOMAIN in the environment.
+# Caddy obtains and renews TLS certificates automatically.
+{
+	email {$ACME_EMAIL}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+		Cross-Origin-Opener-Policy "same-origin"
+		-Server
+	}
+}
+
+{$APP_DOMAIN} {
+	import security_headers
+	encode zstd gzip
+
+	# Tight CSP: our own origin, Razorpay checkout, Cloudflare Turnstile, Firebase Phone Auth (+ reCAPTCHA).
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com https://apis.google.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com https://www.google.com https://*.firebaseapp.com; connect-src 'self' wss://{$APP_DOMAIN} https://lumberjack.razorpay.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://www.google.com; img-src 'self' data: blob: https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+	handle /v1/* {
+		reverse_proxy api:4000
+	}
+	handle /socket.io/* {
+		reverse_proxy api:4000
+	}
+	handle /health/* {
+		reverse_proxy api:4000
+	}
+	handle /media/* {
+		reverse_proxy api:4000
+	}
+	handle {
+		root * /srv/web
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		header /sw.js Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Admin panel: private domain, restricted to the office/VPN addresses in ADMIN_ALLOWED_IPS.
+{$ADMIN_DOMAIN} {
+	import security_headers
+	header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+	header X-Robots-Tag "noindex, nofollow"
+
+	@outsiders not remote_ip {$ADMIN_ALLOWED_IPS}
+	respond @outsiders 403
+
+	handle /admin/v1/* {
+		reverse_proxy admin-api:4100
+	}
+	handle {
+		root * /srv/admin
+		try_files {path} /index.html
+		file_server
+	}
+}

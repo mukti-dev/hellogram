@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@import '@hellogram/ui/theme.css';
+
+/* Let Tailwind see classes used inside the shared UI package. */
+@source '../../../packages/ui/src';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
