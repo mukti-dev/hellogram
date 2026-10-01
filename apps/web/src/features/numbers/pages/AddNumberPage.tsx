@@ -1,4 +1,3 @@
-import type { LabelKind } from '@hellogram/shared';
 import { Button, Card, Switch, TextField } from '@hellogram/ui';
 import { ArrowLeft, CheckCircle2, Crown } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
@@ -6,17 +5,17 @@ import { useNavigate } from 'react-router';
 import { t } from '../../../i18n/t.js';
 import { startCheckout } from '../../billing/checkout.js';
 import { FormError } from '../../auth/components/FormError.js';
-import { LabelPicker } from '../components/LabelPicker.js';
+import { LabelEditor, type LabelValue } from '../components/LabelPicker.js';
 import { useCreateNumber, useNumbers } from '../model/queries.js';
 
 export function AddNumberPage() {
   const navigate = useNavigate();
   const { data } = useNumbers();
   const create = useCreateNumber();
-  const [labelKind, setLabelKind] = useState<LabelKind>('olx');
-  const [labelText, setLabelText] = useState('');
+  const [label, setLabel] = useState<LabelValue>({ labelName: '', labelIcon: 'tag' });
   const [displayName, setDisplayName] = useState('');
   const [allowCalls, setAllowCalls] = useState(true);
+  const [allowMedia, setAllowMedia] = useState(true);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const plan = data?.plan;
@@ -27,7 +26,7 @@ export function AddNumberPage() {
     event.preventDefault();
     setCheckoutError(null);
     create.mutate(
-      { displayName, labelKind, labelText: labelKind === 'other' ? labelText : null, allowCalls },
+      { displayName, labelName: label.labelName.trim(), labelIcon: label.labelIcon, allowCalls, allowMedia },
       {
         onSuccess: async (result) => {
           if (result.kind === 'created') {
@@ -63,22 +62,7 @@ export function AddNumberPage() {
       ) : (
         <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-5">
           <Card className="flex flex-col gap-5 p-4">
-            <div>
-              <p className="text-sm font-medium">{t('numbers.label')}</p>
-              <p className="mb-3 text-xs text-muted">{t('numbers.labelHint')}</p>
-              <LabelPicker value={labelKind} onChange={setLabelKind} />
-              {labelKind === 'other' && (
-                <div className="mt-3">
-                  <TextField
-                    label={t('numbers.customLabel')}
-                    placeholder={t('numbers.customLabelPlaceholder')}
-                    maxLength={16}
-                    value={labelText}
-                    onChange={(e) => setLabelText(e.target.value)}
-                  />
-                </div>
-              )}
-            </div>
+            <LabelEditor value={label} onChange={setLabel} />
             <TextField
               label={t('numbers.displayName')}
               placeholder={t('numbers.displayNamePlaceholder')}
@@ -94,6 +78,13 @@ export function AddNumberPage() {
                 <p className="text-xs text-muted">{t('numbers.allowCallsHint')}</p>
               </div>
               <Switch checked={allowCalls} onCheckedChange={setAllowCalls} label={t('numbers.allowCalls')} />
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium">{t('numbers.allowMedia')}</p>
+                <p className="text-xs text-muted">{t('numbers.allowMediaHint')}</p>
+              </div>
+              <Switch checked={allowMedia} onCheckedChange={setAllowMedia} label={t('numbers.allowMedia')} />
             </div>
           </Card>
 
@@ -125,7 +116,7 @@ export function AddNumberPage() {
             variant="gradient"
             size="lg"
             fullWidth
-            disabled={!displayName.trim() || create.isPending}
+            disabled={!displayName.trim() || !label.labelName.trim() || create.isPending}
           >
             {needsPayment ? t('numbers.payCreate') : t('numbers.create')}
           </Button>

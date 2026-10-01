@@ -1,15 +1,16 @@
 import type {
+  AttachmentDto,
   ConversationDto,
   InboxDto,
-  LabelKind,
   MessageDto,
   MessagePageDto,
   UpdateConversationBody,
 } from '@hellogram/shared';
-import { api } from '../../../core/http/client.js';
+import { api, apiBlob } from '../../../core/http/client.js';
 
 export interface InboxFilter {
-  label?: LabelKind;
+  /** One of the user's own labels. */
+  label?: string;
   unread?: boolean;
   q?: string;
 }
@@ -26,8 +27,20 @@ export const chatApi = {
   unreadCount: () => api<{ count: number }>('/v1/conversations/unread-count'),
   get: (id: string) => api<ConversationDto>(`/v1/conversations/${id}`),
   messages: (id: string, cursor?: string) => api<MessagePageDto>(`/v1/conversations/${id}/messages${qs({ cursor })}`),
-  send: (id: string, clientMessageId: string, body: string) =>
-    api<MessageDto>(`/v1/conversations/${id}/messages`, { method: 'POST', body: { clientMessageId, body } }),
+  send: (id: string, clientMessageId: string, body: string | undefined, attachmentId?: string) =>
+    api<MessageDto>(`/v1/conversations/${id}/messages`, {
+      method: 'POST',
+      body: { clientMessageId, ...(body ? { body } : {}), ...(attachmentId ? { attachmentId } : {}) },
+    }),
+  /** Step 1 of sending a file; the returned id goes into `send`. */
+  uploadAttachment: (id: string, file: Blob, fileName: string) =>
+    api<AttachmentDto>(`/v1/conversations/${id}/attachments`, {
+      method: 'POST',
+      rawBody: file,
+      contentType: 'application/octet-stream',
+      headers: { 'X-File-Name': encodeURIComponent(fileName) },
+    }),
+  downloadAttachment: (attachmentId: string) => apiBlob(`/v1/attachments/${attachmentId}`),
   read: (id: string, upToMessageId: string) =>
     api<void>(`/v1/conversations/${id}/read`, { method: 'POST', body: { upToMessageId } }),
   ack: (messageIds: string[]) => api<void>('/v1/messages/ack', { method: 'POST', body: { messageIds } }),

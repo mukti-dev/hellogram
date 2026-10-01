@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LIMITS } from '../constants.js';
-import { labelKindSchema } from './personas.js';
+import { labelIconSchema } from './personas.js';
 
 /**
  * Someone else's number. Only these four fields ever describe another user
@@ -19,8 +19,8 @@ export const ownPersonaBriefSchema = z.object({
   id: z.uuid(),
   code: z.string(),
   displayName: z.string(),
-  labelKind: labelKindSchema,
-  labelText: z.string().nullable(),
+  labelIcon: labelIconSchema,
+  labelName: z.string(),
 });
 export type OwnPersonaBriefDto = z.infer<typeof ownPersonaBriefSchema>;
 

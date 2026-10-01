@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/** Where /v1 etc. go in development (a second, test-only API can run on another port). */
+const API = process.env.HELLOGRAM_API_PROXY ?? 'http://localhost:4000';
+
 export default defineConfig({
   plugins: [
     react(),
@@ -36,10 +39,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/v1': 'http://localhost:4000',
-      '/health': 'http://localhost:4000',
-      '/media': 'http://localhost:4000',
-      '/socket.io': { target: 'ws://localhost:4000', ws: true },
+      '/v1': API,
+      '/health': API,
+      '/media': API,
+      '/socket.io': { target: API.replace(/^http/, 'ws'), ws: true },
     },
   },
 });

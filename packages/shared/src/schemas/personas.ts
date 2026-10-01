@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { LABEL_KINDS, LIMITS, RETENTION_OPTIONS } from '../constants.js';
+import { LABEL_ICONS, LIMITS, RETENTION_OPTIONS } from '../constants.js';
 
-export const labelKindSchema = z.enum(LABEL_KINDS);
+export const labelIconSchema = z.enum(LABEL_ICONS);
 export const retentionSchema = z.enum(RETENTION_OPTIONS);
 
 /** A user's own number. Never returned for anyone else's persona. */
@@ -10,13 +10,15 @@ export const ownPersonaSchema = z.object({
   code: z.string(),
   displayName: z.string(),
   avatarUrl: z.string().nullable(),
-  labelKind: labelKindSchema,
-  labelText: z.string().nullable(),
+  labelIcon: labelIconSchema,
+  labelName: z.string(),
   status: z.enum(['active', 'paused']),
   pauseReason: z.enum(['user', 'billing', 'admin']).nullable(),
   isPaid: z.boolean(),
   acceptRequests: z.boolean(),
   allowCalls: z.boolean(),
+  /** Photos and files in this number's chats. */
+  allowMedia: z.boolean(),
   readReceipts: z.boolean(),
   dndUntil: z.string().nullable(),
   defaultRetention: retentionSchema,
@@ -40,9 +42,11 @@ export type PersonaListDto = z.infer<typeof personaListSchema>;
 
 export const createPersonaBody = z.object({
   displayName: z.string().trim().min(1).max(LIMITS.DISPLAY_NAME_MAX),
-  labelKind: labelKindSchema,
-  labelText: z.string().trim().max(LIMITS.LABEL_TEXT_MAX).nullish(),
+  /** The user's own label, e.g. "OLX" — required, free text. */
+  labelName: z.string().trim().min(1).max(LIMITS.LABEL_NAME_MAX),
+  labelIcon: labelIconSchema,
   allowCalls: z.boolean().default(true),
+  allowMedia: z.boolean().default(true),
 });
 export type CreatePersonaBody = z.infer<typeof createPersonaBody>;
 
@@ -56,10 +60,11 @@ export type CheckoutDto = z.infer<typeof checkoutSchema>;
 export const updatePersonaBody = z
   .object({
     displayName: z.string().trim().min(1).max(LIMITS.DISPLAY_NAME_MAX),
-    labelKind: labelKindSchema,
-    labelText: z.string().trim().max(LIMITS.LABEL_TEXT_MAX).nullable(),
+    labelName: z.string().trim().min(1).max(LIMITS.LABEL_NAME_MAX),
+    labelIcon: labelIconSchema,
     acceptRequests: z.boolean(),
     allowCalls: z.boolean(),
+    allowMedia: z.boolean(),
     readReceipts: z.boolean(),
     dndUntil: z.iso.datetime().nullable(),
     defaultRetention: retentionSchema,

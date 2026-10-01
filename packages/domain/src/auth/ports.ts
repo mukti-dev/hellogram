@@ -1,3 +1,4 @@
+import type { Gender } from '@hellogram/shared';
 import type {
   Account,
   OtpChallenge,
@@ -11,8 +12,21 @@ export interface AccountRepository {
   findById(id: string): Promise<Account | null>;
   findByPhone(phone: string): Promise<Account | null>;
   findByVerifiedEmail(email: string): Promise<Account | null>;
-  create(input: { phone: string; ageConfirmedAt: Date; consentVersion: string; ipHash: string }): Promise<Account>;
+  create(input: {
+    phone: string;
+    name: string;
+    passwordHash: string;
+    dateOfBirth: Date;
+    gender: Gender;
+    ageConfirmedAt: Date;
+    consentVersion: string;
+    ipHash: string;
+  }): Promise<Account>;
+  /** Null if the account has no password yet (created before passwords existed). */
+  findPasswordHash(accountId: string): Promise<string | null>;
+  setPasswordHash(accountId: string, passwordHash: string): Promise<void>;
   setVerifiedEmail(accountId: string, email: string, verifiedAt: Date): Promise<void>;
+  setName(accountId: string, name: string): Promise<void>;
   isEmailTaken(email: string, exceptAccountId: string): Promise<boolean>;
 }
 
@@ -22,6 +36,7 @@ export interface SessionRepository {
     deviceName: string | null;
     userAgent: string | null;
     ipHash: string;
+    deviceHash?: string | null;
     expiresAt: Date;
   }): Promise<Session>;
   findById(id: string): Promise<Session | null>;
@@ -40,6 +55,7 @@ export interface OtpChallengeRepository {
     targetHash: string;
     purpose: OtpPurpose;
     codeHash: string;
+    providerRef?: string | null;
     expiresAt: Date;
     ipHash: string;
   }): Promise<void>;
@@ -50,10 +66,32 @@ export interface OtpChallengeRepository {
   consume(id: string, at: Date): Promise<boolean>;
 }
 
+/** Devices where the mobile number has been verified for this account (login then needs only the password). */
+export interface TrustedDeviceRepository {
+  isTrusted(accountId: string, deviceHash: string): Promise<boolean>;
+  trust(accountId: string, deviceHash: string, at: Date): Promise<void>;
+  revoke(accountId: string, deviceHash: string): Promise<void>;
+  revokeAll(accountId: string): Promise<void>;
+}
+
+/** Short-lived server-side state keyed by a random id (Redis): pending sign-ups and device logins. */
+export interface EphemeralStore<T> {
+  put(value: T, ttlSeconds: number): Promise<string>;
+  get(id: string): Promise<T | null>;
+  delete(id: string): Promise<void>;
+}
+
+/** Slow, salted password hashing (argon2id). */
+export interface PasswordHasher {
+  hash(password: string): Promise<string>;
+  verify(hash: string, password: string): Promise<boolean>;
+}
+
 export interface AuthRepositories {
   accounts: AccountRepository;
   sessions: SessionRepository;
   otps: OtpChallengeRepository;
+  trustedDevices: TrustedDeviceRepository;
 }
 
 export type SmsNotice = 'phone_change_requested';
@@ -64,6 +102,16 @@ export interface SmsProvider {
   sendNotice(phone: string, notice: SmsNotice): Promise<void>;
 }
 
+/**
+ * An SMS verification service that makes, sends and checks the code itself
+ * (e.g. Message Central VerifyNow). We keep our own challenge row for limits and single use.
+ */
+export interface HostedSmsVerification {
+  /** Sends a code to `phone` (E.164); returns the provider's reference for the check. */
+  send(phone: string): Promise<{ reference: string }>;
+  check(phone: string, reference: string, code: string): Promise<'valid' | 'invalid' | 'expired'>;
+}
+
 export interface EmailProvider {
   sendOtp(email: string, code: string, purpose: 'login' | 'verify'): Promise<void>;
 }
@@ -71,7 +119,7 @@ export interface EmailProvider {
 /** Cryptographic helpers, implemented with node:crypto in infrastructure. */
 export interface CryptoService {
   /** Keyed hash for lookups (targets, IPs, refresh tokens, OTP codes). */
-  hmac(purpose: 'target' | 'ip' | 'refresh' | 'otp', value: string): string;
+  hmac(purpose: 'target' | 'ip' | 'refresh' | 'otp' | 'device', value: string): string;
   randomToken(bytes?: number): string;
   randomDigits(length: number): string;
   /** Uniform random integer in [0, max). */

@@ -3,8 +3,8 @@ import { DropdownMenu, cn } from '@hellogram/ui';
 import { ChevronDown, Copy, Trash2 } from 'lucide-react';
 import { t } from '../../../i18n/t.js';
 import { clockTime } from '../../../shared/format.js';
-import { useNow } from '../../../shared/use-now.js';
 import { useDeleteMessage } from '../model/queries.js';
+import { AttachmentView } from './AttachmentView.js';
 import { Ticks, type TickState } from './Ticks.js';
 
 const PERIOD: Record<string, string> = { d90: '90 days', d30: '30 days', d7: '7 days', h24: '24 hours' };
@@ -20,8 +20,6 @@ export function systemText(m: MessageDto, otherName: string): string {
   return t('chat.numberGone');
 }
 
-const WITHIN_HOUR = 60 * 60 * 1000;
-
 export function MessageBubble({
   message,
   otherName,
@@ -35,7 +33,6 @@ export function MessageBubble({
   onRetry?: () => void;
 }) {
   const remove = useDeleteMessage(message.conversationId);
-  const now = useNow();
 
   if (message.type === 'system') {
     return (
@@ -47,24 +44,27 @@ export function MessageBubble({
 
   const mine = message.mine;
   const state: TickState | null = tick ?? (mine && message.status ? message.status : null);
-  const canDeleteForEveryone = mine && !message.deleted && now - new Date(message.createdAt).getTime() < WITHIN_HOUR;
   const isOptimistic = Boolean(tick);
 
   return (
     <div className={cn('group flex items-end gap-1', mine ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'relative max-w-[78%] rounded-2xl px-3.5 py-2 text-[15px] leading-snug shadow-sm',
+          'relative max-w-[78%] rounded-2xl text-[15px] leading-snug shadow-sm',
+          message.attachment ? 'p-1.5' : 'px-3.5 py-2',
           mine ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md bg-surface-2 text-fg',
           message.deleted && 'italic opacity-80',
           tick === 'failed' && 'cursor-pointer ring-1 ring-danger',
         )}
         onClick={tick === 'failed' ? onRetry : undefined}
       >
-        <p className="break-words whitespace-pre-wrap">
-          {message.deleted ? (mine ? t('chat.deletedMine') : t('chat.deleted')) : message.body}
-        </p>
-        <span className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', mine ? 'text-white/75' : 'text-muted')}>
+        {message.attachment && <AttachmentView attachment={message.attachment} mine={mine} />}
+        {(message.deleted || message.body || !message.attachment) && (
+          <p className={cn('break-words whitespace-pre-wrap', message.attachment && 'px-2 pt-1.5')}>
+            {message.deleted ? t('chat.deleted') : message.body}
+          </p>
+        )}
+        <span className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', message.attachment && 'px-2 pb-0.5', mine ? 'text-white/75' : 'text-muted')}>
           {tick === 'failed' ? t('chat.notSent') : tick === 'pending' && !navigator.onLine ? t('chat.queued') : clockTime(message.createdAt)}
           {state && <Ticks state={state} />}
         </span>
@@ -86,9 +86,8 @@ export function MessageBubble({
                   ? [{ label: t('chat.copy'), icon: <Copy className="size-4" />, onSelect: () => void navigator.clipboard?.writeText(message.body ?? '') }]
                   : []),
                 { label: t('chat.deleteForMe'), icon: <Trash2 className="size-4" />, onSelect: () => remove.mutate({ message, scope: 'me' }) },
-                ...(canDeleteForEveryone
-                  ? [{ label: t('chat.deleteForEveryone'), icon: <Trash2 className="size-4" />, danger: true, onSelect: () => remove.mutate({ message, scope: 'everyone' }) }]
-                  : []),
+                // Any message, mine or theirs, at any time.
+                { label: t('chat.deleteForEveryone'), icon: <Trash2 className="size-4" />, danger: true, onSelect: () => remove.mutate({ message, scope: 'everyone' }) },
               ]}
             />
           </span>

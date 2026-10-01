@@ -5,7 +5,7 @@ export async function createNumber(user: User, name: string, extra: Record<strin
   const res = await user.request<OwnPersonaDto>({
     method: 'POST',
     url: '/v1/personas',
-    payload: { displayName: name, labelKind: 'olx', allowCalls: true, ...extra },
+    payload: { displayName: name, labelName: 'OLX', labelIcon: 'shopping-bag', allowCalls: true, ...extra },
   });
   if (res.status !== 201) throw new Error(JSON.stringify(res.body));
   return res.body;

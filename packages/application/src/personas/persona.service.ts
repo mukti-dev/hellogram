@@ -17,13 +17,15 @@ import {
   type QrCodeRenderer,
   type StorageProvider,
 } from '@hellogram/domain';
-import { ErrorCode, type LabelKind, type Retention } from '@hellogram/shared';
+import { ErrorCode, type LabelIcon, type Retention } from '@hellogram/shared';
 
 export interface NewPersonaInput {
   displayName: string;
-  labelKind: LabelKind;
-  labelText?: string | null | undefined;
+  /** The user's own label (e.g. "OLX") and its icon. */
+  labelName: string;
+  labelIcon: string;
   allowCalls: boolean;
+  allowMedia: boolean;
 }
 
 export interface CheckoutInfo {
@@ -35,7 +37,7 @@ export interface CheckoutInfo {
 
 /** Implemented by the billing module (Phase 9): starts payment for a paid slot. */
 export interface PaidNumberCheckout {
-  start(actor: Actor, input: NewPersonaInput & { labelText: string | null }): Promise<CheckoutInfo>;
+  start(actor: Actor, input: NewPersonaInput & { labelIcon: LabelIcon }): Promise<CheckoutInfo>;
 }
 
 export type CreatePersonaResult = { kind: 'created'; persona: Persona } | { kind: 'payment_required'; checkout: CheckoutInfo };
@@ -98,7 +100,7 @@ export class PersonaService {
 
   async create(actor: Actor, input: NewPersonaInput): Promise<CreatePersonaResult> {
     const displayName = normalizeDisplayName(input.displayName);
-    const label = normalizeLabel(input.labelKind, input.labelText);
+    const label = normalizeLabel(input.labelName, input.labelIcon);
     const existing = await this.deps.personas.listByAccount(actor.accountId);
     const since = new Date(this.deps.clock.now().getTime() - WEEK_MS);
     const { requiresPayment } = assertCanCreatePersona(
@@ -125,6 +127,7 @@ export class PersonaService {
       displayName,
       ...label,
       allowCalls: input.allowCalls,
+      allowMedia: input.allowMedia,
       isPaid: false,
     });
     await this.publishUpdated(persona);
@@ -135,9 +138,10 @@ export class PersonaService {
   async createWithUniqueCode(input: {
     accountId: string;
     displayName: string;
-    labelKind: LabelKind;
-    labelText: string | null;
+    labelIcon: LabelIcon;
+    labelName: string;
     allowCalls: boolean;
+    allowMedia: boolean;
     isPaid: boolean;
   }): Promise<Persona> {
     for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
@@ -154,10 +158,11 @@ export class PersonaService {
     id: string,
     input: {
       displayName?: string | undefined;
-      labelKind?: LabelKind | undefined;
-      labelText?: string | null | undefined;
+      labelIcon?: string | undefined;
+      labelName?: string | undefined;
       acceptRequests?: boolean | undefined;
       allowCalls?: boolean | undefined;
+      allowMedia?: boolean | undefined;
       readReceipts?: boolean | undefined;
       dndUntil?: Date | null | undefined;
       defaultRetention?: Retention | undefined;
@@ -166,8 +171,10 @@ export class PersonaService {
     const current = await this.unlocked(actor, id);
     const patch: PersonaSettingsPatch = {};
     if (input.displayName !== undefined) patch.displayName = normalizeDisplayName(input.displayName);
-    if (input.labelKind !== undefined) Object.assign(patch, normalizeLabel(input.labelKind, input.labelText));
-    for (const key of ['acceptRequests', 'allowCalls', 'readReceipts', 'defaultRetention'] as const) {
+    if (input.labelName !== undefined || input.labelIcon !== undefined) {
+      Object.assign(patch, normalizeLabel(input.labelName ?? current.labelName, input.labelIcon ?? current.labelIcon));
+    }
+    for (const key of ['acceptRequests', 'allowCalls', 'allowMedia', 'readReceipts', 'defaultRetention'] as const) {
       if (input[key] !== undefined) Object.assign(patch, { [key]: input[key] });
     }
     if (input.dndUntil !== undefined) patch.dndUntil = input.dndUntil;

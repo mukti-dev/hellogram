@@ -1,11 +1,12 @@
 import type { OwnPersonaDto } from '@hellogram/shared';
-import { Avatar, Card, DropdownMenu, LabelChip, NumberCode, StatusChip, cn } from '@hellogram/ui';
+import { Avatar, Card, DropdownMenu, NumberCode, StatusChip, cn } from '@hellogram/ui';
 import { EllipsisVertical, Eye, Lock, Pause, Phone, PhoneOff, Play, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { t } from '../../../i18n/t.js';
-import { labelOf, usePauseResume } from '../model/queries.js';
+import { usePauseResume } from '../model/queries.js';
 import { DeleteNumberDialog } from './DeleteNumberDialog.js';
+import { NumberLabel } from '../components/NumberLabel.js';
 
 export function NumberCard({ number }: { number: OwnPersonaDto }) {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ export function NumberCard({ number }: { number: OwnPersonaDto }) {
     <Card className="relative flex items-center gap-4 p-4 transition hover:border-primary/50">
       <Avatar name={number.displayName} src={number.avatarUrl} size={56} />
       <div className="min-w-0 flex-1">
-        <LabelChip kind={number.labelKind} text={labelOf(number)} />
+        <NumberLabel of={number} />
         {/* Whole card is clickable via this link's stretched hit area. */}
         <Link to={`/numbers/${number.id}`} className="mt-1.5 block truncate font-semibold after:absolute after:inset-0">
           {number.displayName}

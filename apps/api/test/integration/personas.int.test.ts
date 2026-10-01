@@ -9,8 +9,8 @@ beforeAll(async () => {
 afterAll(async () => h.close());
 beforeEach(async () => h.reset());
 
-const create = (user: Awaited<ReturnType<Harness['signUp']>>, name = 'Rahul Deals', labelKind = 'olx') =>
-  user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: name, labelKind, allowCalls: true } });
+const create = (user: Awaited<ReturnType<Harness['signUp']>>, name = 'Rahul Deals', labelName = 'OLX', labelIcon = 'shopping-bag') =>
+  user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: name, labelName, labelIcon, allowCalls: true } });
 
 describe('numbers (rules 5–8)', () => {
   it('creates numbers with unique, well-formed codes and never leaks account ids', async () => {
@@ -18,7 +18,15 @@ describe('numbers (rules 5–8)', () => {
     const res = await create(user);
     expect(res.status).toBe(201);
     expect(res.body.code).toMatch(NUMBER_CODE_PATTERN);
-    expect(res.body).toMatchObject({ displayName: 'Rahul Deals', labelKind: 'olx', status: 'active', isPaid: false });
+    expect(res.body).toMatchObject({
+      displayName: 'Rahul Deals',
+      labelName: 'OLX',
+      labelIcon: 'shopping-bag',
+      allowCalls: true,
+      allowMedia: true,
+      status: 'active',
+      isPaid: false,
+    });
     assertNoAccountLeak(res.body);
 
     const list = await user.request<PersonaListDto>({ method: 'GET', url: '/v1/personas' });
@@ -80,11 +88,33 @@ describe('numbers (rules 5–8)', () => {
     const res = await user.request<OwnPersonaDto>({
       method: 'PATCH',
       url: `/v1/personas/${p.body.id}`,
-      payload: { displayName: 'Coffee Chats', labelKind: 'other', labelText: 'Freelance', readReceipts: false, defaultRetention: 'd7' },
+      payload: { displayName: 'Coffee Chats', labelIcon: 'briefcase', labelName: 'Freelance', readReceipts: false, allowMedia: false, defaultRetention: 'd7' },
     });
-    expect(res.body).toMatchObject({ displayName: 'Coffee Chats', labelKind: 'other', labelText: 'Freelance', readReceipts: false, defaultRetention: 'd7' });
-    const tooLong = await user.request({ method: 'PATCH', url: `/v1/personas/${p.body.id}`, payload: { labelKind: 'other', labelText: 'x'.repeat(17) } });
+    expect(res.body).toMatchObject({
+      displayName: 'Coffee Chats',
+      labelIcon: 'briefcase',
+      labelName: 'Freelance',
+      readReceipts: false,
+      allowMedia: false,
+      defaultRetention: 'd7',
+    });
+    const tooLong = await user.request({ method: 'PATCH', url: `/v1/personas/${p.body.id}`, payload: { labelName: 'x'.repeat(21) } });
     expect(tooLong.status).toBe(400);
+  });
+
+  it('labels are the user’s own words with an icon — no presets', async () => {
+    const user = await h.signUp();
+    const ok = await create(user, 'Car Sale', 'Selling my Swift', 'car');
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ labelName: 'Selling my Swift', labelIcon: 'car' });
+
+    const noLabel = await user.request({ method: 'POST', url: '/v1/personas', payload: { displayName: 'X', labelIcon: 'tag', allowCalls: true } });
+    expect(noLabel.status).toBe(400);
+    const blank = await create(user, 'X', '   ', 'tag');
+    expect(blank.status).toBe(400);
+    // The old preset kinds are just unknown icons now.
+    const preset = await create(user, 'X', 'OLX', 'olx');
+    expect(preset.status).toBe(400);
   });
 
   it('share returns the public link and a QR SVG', async () => {

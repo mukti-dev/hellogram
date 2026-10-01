@@ -38,7 +38,7 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
       // Anonymise: the phone/email are freed for a future sign-up and no longer stored.
       await tx.account.update({
         where: { id: accountId },
-        data: { status: 'deleted', deletedAt: at, phone: `deleted:${randomUUID()}`, email: null, emailVerifiedAt: null },
+        data: { status: 'deleted', deletedAt: at, phone: `deleted:${randomUUID()}`, name: null, email: null, emailVerifiedAt: null },
       });
     });
   }
@@ -46,12 +46,12 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
   async exportData(accountId: string, readable: ReadonlySet<string>): Promise<Record<string, unknown>> {
     const account = await this.db.account.findUnique({
       where: { id: accountId },
-      select: { phone: true, email: true, emailVerifiedAt: true, ageConfirmedAt: true, status: true, createdAt: true },
+      select: { phone: true, name: true, email: true, emailVerifiedAt: true, ageConfirmedAt: true, status: true, createdAt: true },
     });
     const personas = await this.db.persona.findMany({
       where: { accountId },
       select: {
-        id: true, code: true, displayName: true, labelKind: true, labelText: true, status: true, isPaid: true,
+        id: true, code: true, displayName: true, labelIcon: true, labelName: true, status: true, isPaid: true,
         acceptRequests: true, allowCalls: true, readReceipts: true, defaultRetention: true, createdAt: true, retiredAt: true,
       },
     });
@@ -90,7 +90,10 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
           hiddenFor: { none: { personaId: m.personaId } },
         },
         orderBy: { createdAt: 'asc' },
-        select: { createdAt: true, type: true, body: true, senderPersonaId: true, deletedForEveryoneAt: true },
+        select: {
+          createdAt: true, type: true, body: true, senderPersonaId: true, deletedForEveryoneAt: true, contentPurgedAt: true,
+          attachment: { select: { fileName: true, mimeType: true, sizeBytes: true } },
+        },
       });
       conversations.push({
         viaNumber: personas.find((p) => p.id === m.personaId)?.code,
@@ -103,6 +106,8 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
           fromMe: x.senderPersonaId === m.personaId,
           type: x.type,
           body: x.deletedForEveryoneAt ? null : x.body,
+          // File details only; the files themselves are downloaded from the chat.
+          ...(x.attachment && !x.deletedForEveryoneAt && !x.contentPurgedAt ? { attachment: x.attachment } : {}),
         })),
       });
     }

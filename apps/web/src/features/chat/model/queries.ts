@@ -1,6 +1,7 @@
 import type { MessageDto, UpdateConversationBody } from '@hellogram/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { chatApi, type InboxFilter } from '../api/chat.api.js';
+import { forgetAttachment } from './attachments.js';
 import { upsertMessage } from './cache.js';
 import { chatKeys } from './keys.js';
 
@@ -55,7 +56,8 @@ export function useDeleteMessage(conversationId: string) {
     mutationFn: ({ message, scope }: { message: MessageDto; scope: 'me' | 'everyone' }) =>
       chatApi.deleteMessage(message.id, scope),
     onSuccess: (_void, { message, scope }) => {
-      if (scope === 'everyone') upsertMessage(client, { ...message, deleted: true, body: null });
+      if (message.attachment) forgetAttachment(message.attachment.id);
+      if (scope === 'everyone') upsertMessage(client, { ...message, deleted: true, body: null, attachment: null });
       else void client.invalidateQueries({ queryKey: chatKeys.messages(conversationId) });
       void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });
     },

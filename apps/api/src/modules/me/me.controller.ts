@@ -2,13 +2,18 @@ import type { AccountService } from '@hellogram/application';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { actorOf } from '../../plugins/auth.js';
-import type { confirmEmailBody, sessionParams, startEmailBody } from './me.schemas.js';
+import type { confirmEmailBody, sessionParams, startEmailBody, updateMeBody } from './me.schemas.js';
 
 export class MeController {
   constructor(private readonly accounts: AccountService) {}
 
   getMe = async (request: FastifyRequest) => {
     const me = await this.accounts.getMe(actorOf(request));
+    return { ...me, createdAt: me.createdAt.toISOString() };
+  };
+
+  updateMe = async (request: FastifyRequest<{ Body: z.infer<typeof updateMeBody> }>) => {
+    const me = await this.accounts.setName(actorOf(request), request.body.name);
     return { ...me, createdAt: me.createdAt.toISOString() };
   };
 

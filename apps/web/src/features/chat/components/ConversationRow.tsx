@@ -1,10 +1,11 @@
 import type { ConversationDto } from '@hellogram/shared';
-import { Avatar, CountBadge, LabelChip, cn } from '@hellogram/ui';
+import { Avatar, CountBadge, cn } from '@hellogram/ui';
 import { BellOff } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { t } from '../../../i18n/t.js';
-import { labelName, listTime } from '../../../shared/format.js';
+import { listTime } from '../../../shared/format.js';
 import { systemText } from './MessageBubble.js';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 export const chatTitle = (c: Pick<ConversationDto, 'nickname' | 'counterpart'>) => c.nickname ?? c.counterpart.displayName;
 
@@ -12,8 +13,9 @@ function preview(c: ConversationDto): string {
   const m = c.lastMessage;
   if (!m) return '';
   if (m.type === 'system') return systemText(m, c.counterpart.displayName);
-  if (m.deleted) return m.mine ? t('chat.deletedMine') : t('chat.deleted');
-  return `${m.mine ? 'You: ' : ''}${m.body ?? ''}`;
+  if (m.deleted) return t('chat.deleted');
+  const file = m.attachment ? (m.attachment.kind === 'image' ? `📷 ${t('chat.photo')}` : `📎 ${m.attachment.fileName}`) : '';
+  return `${m.mine ? 'You: ' : ''}${m.body ?? file}`;
 }
 
 export function ConversationRow({ conversation: c }: { conversation: ConversationDto }) {
@@ -29,7 +31,7 @@ export function ConversationRow({ conversation: c }: { conversation: Conversatio
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className={cn('truncate text-sm', c.unread > 0 ? 'font-bold' : 'font-semibold')}>{chatTitle(c)}</p>
-          <LabelChip kind={c.me.labelKind} text={labelName(c.me)} prefix={t('chat.via')} className="shrink-0" />
+          <NumberLabel of={c.me} prefix={t('chat.via')} className="shrink-0" />
           <span className={cn('ml-auto shrink-0 text-[11px]', c.unread > 0 ? 'text-primary' : 'text-muted')}>
             {listTime(c.lastActivityAt)}
           </span>

@@ -6,6 +6,7 @@ export * from './personas/persona.service.js';
 export * from './safety/block.service.js';
 export * from './requests/request.service.js';
 export * from './chat/chat.service.js';
+export * from './chat/attachment.service.js';
 export * from './safety/safety.service.js';
 export * from './safety/maintenance.service.js';
 export * from './pin/pin.service.js';

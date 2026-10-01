@@ -1,11 +1,12 @@
 import type { ConversationDto } from '@hellogram/shared';
-import { Avatar, LabelChip } from '@hellogram/ui';
+import { Avatar } from '@hellogram/ui';
 import { ArrowLeft, EllipsisVertical, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { t } from '../../../i18n/t.js';
-import { labelName } from '../../../shared/format.js';
+
 import { useTypingStore } from '../model/typing.js';
 import { chatTitle } from './ConversationRow.js';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 export function ChatHeader({
   conversation: c,
@@ -38,7 +39,7 @@ export function ChatHeader({
               <span className="font-medium text-primary">{t('chat.typing')}</span>
             ) : (
               <>
-                <LabelChip kind={c.me.labelKind} text={labelName(c.me)} prefix={t('chat.via')} />
+                <NumberLabel of={c.me} prefix={t('chat.via')} />
                 {c.counterpart.code && <span className="font-mono">· {c.counterpart.code}</span>}
               </>
             )}

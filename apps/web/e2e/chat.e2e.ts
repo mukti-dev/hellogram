@@ -25,5 +25,15 @@ test('two browsers chat live with ticks and typing', async ({ browser }) => {
   await visitor.getByRole('button', { name: 'Send' }).click();
   await expect(owner.getByRole('log').getByText('Can you share')).toBeVisible();
 
+  // Either side can delete any message for everyone — here the owner removes the visitor's message.
+  const theirs = owner.locator('div.group').filter({ hasText: 'Can you share' });
+  await theirs.hover();
+  await theirs.getByRole('button', { name: 'Message actions' }).click();
+  await owner.getByRole('menuitem', { name: 'Delete for everyone' }).click();
+  for (const page of [owner, visitor]) {
+    await expect(page.getByRole('log').getByText('Can you share')).toHaveCount(0);
+    await expect(page.getByRole('log').getByText('This message was deleted')).toBeVisible();
+  }
+
   await close();
 });

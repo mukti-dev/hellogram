@@ -8,6 +8,10 @@ const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   VALIDATION_FAILED: 400,
   MESSAGE_TOO_LONG: 400,
   AGE_CONFIRMATION_REQUIRED: 400,
+  // 400, not 401: a 401 would make the web client try a token refresh.
+  INVALID_CREDENTIALS: 400,
+  UNDER_AGE: 422,
+  ACCOUNT_EXISTS: 409,
   OTP_INVALID: 400,
   OTP_EXPIRED: 400,
   PIN_INVALID: 400,
@@ -20,9 +24,11 @@ const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   CONFLICT: 409,
   REQUEST_ALREADY_PENDING: 409,
   CONVERSATION_CLOSED: 409,
-  DELETE_WINDOW_EXPIRED: 409,
   NUMBER_UNAVAILABLE: 410,
   NUMBER_PAUSED: 409,
+  FILE_TOO_LARGE: 413,
+  FILE_TYPE_NOT_ALLOWED: 415,
+  MEDIA_NOT_ALLOWED: 403,
   OWN_NUMBER: 422,
   NOT_ACCEPTING_REQUESTS: 422,
   CALL_NOT_ALLOWED: 422,
@@ -67,6 +73,9 @@ export const errorHandlerPlugin = fp(async (app: FastifyInstance) => {
       return reply.status(429).send(body(ErrorCode.RATE_LIMITED, 'Too many requests. Please try again later.'));
     }
 
+    if (error.statusCode === 413) {
+      return reply.status(413).send(body(ErrorCode.FILE_TOO_LARGE, 'That file is too large.'));
+    }
     if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
       const code = error.statusCode === 404 ? ErrorCode.NOT_FOUND : ErrorCode.VALIDATION_FAILED;
       return reply.status(error.statusCode).send(body(code, error.message));

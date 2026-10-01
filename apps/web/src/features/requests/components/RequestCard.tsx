@@ -1,11 +1,12 @@
 import type { IncomingRequestDto } from '@hellogram/shared';
-import { Avatar, Button, Card, Dialog, LabelChip } from '@hellogram/ui';
+import { Avatar, Button, Card, Dialog } from '@hellogram/ui';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { t } from '../../../i18n/t.js';
-import { labelName, timeAgo } from '../../../shared/format.js';
+import { timeAgo } from '../../../shared/format.js';
 import { ReportDialog } from '../../safety/components/ReportDialog.js';
 import { useRequestAction } from '../model/queries.js';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 export function RequestCard({ request }: { request: IncomingRequestDto }) {
   const action = useRequestAction();
@@ -21,7 +22,7 @@ export function RequestCard({ request }: { request: IncomingRequestDto }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate font-semibold">{request.from.displayName}</p>
-            <LabelChip kind={request.to.labelKind} text={labelName(request.to)} prefix={t('requests.to')} />
+            <NumberLabel of={request.to} prefix={t('requests.to')} />
             <span className="ml-auto shrink-0 text-xs text-muted">{timeAgo(request.createdAt)}</span>
           </div>
           <p className="mt-1 text-sm text-muted">{request.introMessage}</p>

@@ -17,9 +17,10 @@ export const useAuthStore = create<AuthState>()((set) => ({
   status: 'unknown',
   signIn: (accessToken) => set({ accessToken, status: 'authenticated' }),
   signOut: () => {
-    // Nothing from the previous user stays on the device: unsent messages, unlock tokens.
+    // Nothing from the previous user stays on the device: unsent messages, unlock tokens, decrypted files.
     void import('../../chat/model/outbox.js').then((m) => m.useOutbox.getState().clear());
     void import('../../pin/model/unlock-tokens.js').then((m) => m.useUnlockTokens.getState().clear());
+    void import('../../chat/model/attachments.js').then((m) => m.clearAttachmentCache());
     set({ accessToken: null, status: 'anonymous' });
   },
   setAnonymous: () => set({ accessToken: null, status: 'anonymous' }),

@@ -6,6 +6,7 @@ import { startPhoneVerification, type PhoneProof, type VerificationSession } fro
 import { t } from '../../../i18n/t.js';
 import { OtpInput } from '../../auth/components/OtpInput.js';
 import { formatPhone } from '../../auth/model/queries.js';
+import { OtpDeliveryNote } from '../../auth/components/OtpDeliveryNote.js';
 
 export interface PendingPhoneChange {
   newPhone: string;
@@ -76,10 +77,12 @@ export function PhoneChangeDialog({ open, onOpenChange }: { open: boolean; onOpe
           <TextField label={t('privacy.newNumber')} inputMode="numeric" placeholder="98765 43210" value={mobile} onChange={(e) => setMobile(e.target.value)} autoFocus />
           {error && <p className="text-sm text-danger">{error.message}</p>}
           <Button type="submit" variant="gradient" disabled={!/^[6-9]\d{9}$/.test(digits) || start.isPending}>{t('auth.sendOtp')}</Button>
+          <OtpDeliveryNote when="before" />
         </form>
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-sm text-muted">{t('auth.sentTo', { target: `+91 ${digits}` })}</p>
+          <OtpDeliveryNote when="after" />
           <OtpInput value={code} onChange={setCode} onComplete={(v) => verify.mutate(v)} />
           {error && <p className="text-sm text-danger">{error.message}</p>}
         </div>

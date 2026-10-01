@@ -19,7 +19,7 @@ async function twoChats() {
   const owner = await h.signUp();
   const creep = await h.signUp();
   const rahul = await createNumber(owner, 'Rahul');
-  const coffee = await createNumber(owner, 'Coffee', { labelKind: 'dating' });
+  const coffee = await createNumber(owner, 'Coffee', { labelName: 'Dating', labelIcon: 'heart' });
   const creep1 = await createNumber(creep, 'Creep One');
   const creep2 = await createNumber(creep, 'Creep Two');
   for (const [from, to] of [[creep1, rahul], [creep2, coffee]] as const) {

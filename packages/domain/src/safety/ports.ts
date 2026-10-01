@@ -32,6 +32,8 @@ export interface EvidenceMessage {
   senderDisplayName: string;
   type: 'text' | 'system' | 'intro';
   body: string | null;
+  /** What was shared (details only — the file itself is not copied into the evidence). */
+  attachment?: { kind: 'image' | 'file'; fileName: string; mimeType: string; sizeBytes: number } | null;
   deleted: boolean;
   suppressed: boolean;
 }

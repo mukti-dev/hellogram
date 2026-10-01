@@ -1,15 +1,18 @@
-import { AccountService, AuthService, HealthService, OtpVerifier, PersonaService } from '@hellogram/application';
+import { AccountService, AuthService, HealthService, OtpVerifier, PersonaService, PhoneProofChecker } from '@hellogram/application';
 import {
   FakeAccounts,
   FakeClock,
   FakeEmail,
+  FakeEphemeralStore,
   FakeLimiter,
   FakeOtps,
   FakePersonas,
   FakeSessions,
   FakeSms,
   FakeTokens,
+  FakeTrustedDevices,
   fakeCrypto,
+  fakePasswords,
   fakeQr,
   fakeStorage,
   passthroughUow,
@@ -22,13 +25,30 @@ export const TEST_CONSENT = '2026-09-v1';
 /** In-memory container for HTTP-level tests (no Postgres/Redis). */
 export function makeTestContainer(options: { probe?: 'ok' | 'down'; bypass?: boolean } = {}) {
   const clock = new FakeClock();
-  const repos = { accounts: new FakeAccounts(), sessions: new FakeSessions(), otps: new FakeOtps() };
+  const repos = {
+    accounts: new FakeAccounts(),
+    sessions: new FakeSessions(),
+    otps: new FakeOtps(),
+    trustedDevices: new FakeTrustedDevices(),
+  };
   const sms = new FakeSms();
   const email = new FakeEmail();
   const limiter = new FakeLimiter();
-  const otp = new OtpVerifier(repos.otps, fakeCrypto, clock, { bypass: options.bypass ?? false });
+  const otp = new OtpVerifier(repos.otps, fakeCrypto, clock, { bypass: options.bypass ?? false, sms });
   const authService = new AuthService(
-    { repos, uow: passthroughUow(repos), otp, sms, email, crypto: fakeCrypto, tokens: new FakeTokens(), limiter, clock },
+    {
+      repos,
+      uow: passthroughUow(repos),
+      otp,
+      proofs: new PhoneProofChecker({ otp, firebase: null, clock }),
+      passwords: fakePasswords,
+      pendingSignups: new FakeEphemeralStore(),
+      deviceLogins: new FakeEphemeralStore(),
+      crypto: fakeCrypto,
+      tokens: new FakeTokens(),
+      limiter,
+      clock,
+    },
     { consentVersion: TEST_CONSENT, sessionTtlDays: 90 },
   );
   const accountService = new AccountService({ ...repos, otp, email, crypto: fakeCrypto, limiter, clock });

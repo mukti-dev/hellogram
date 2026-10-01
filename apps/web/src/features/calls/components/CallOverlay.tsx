@@ -1,8 +1,9 @@
-import { Avatar, LabelChip, cn } from '@hellogram/ui';
+import { Avatar, cn } from '@hellogram/ui';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 import { Mic, MicOff, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
 import { useNow } from '../../../shared/use-now.js';
 import { t } from '../../../i18n/t.js';
-import { labelName } from '../../../shared/format.js';
+
 import { useCallStore } from '../model/call-store.js';
 
 function useTimer(startedAt: number | null) {
@@ -39,7 +40,6 @@ export function CallOverlay() {
   const timer = useTimer(s.startedAt);
   if (s.phase === 'idle' || !s.party) return null;
 
-  const label = s.party.labelKind ? labelName({ labelKind: s.party.labelKind, labelText: s.party.labelText }) : null;
   const status =
     s.phase === 'incoming'
       ? t('calls.incoming')
@@ -64,10 +64,9 @@ export function CallOverlay() {
           <Avatar name={s.party.name} src={s.party.avatarUrl} size={120} />
         </div>
         <h1 className="mt-6 text-3xl font-bold">{s.party.name}</h1>
-        {label && s.party.labelKind && (
-          <LabelChip
-            kind={s.party.labelKind as 'olx' | 'dating' | 'tenants' | 'other'}
-            text={label}
+        {s.party.labelIcon && s.party.labelName && (
+          <NumberLabel
+            of={{ labelIcon: s.party.labelIcon, labelName: s.party.labelName }}
             prefix={t('chat.via')}
             className="mt-3 bg-white/15 text-white"
           />

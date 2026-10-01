@@ -39,7 +39,7 @@ export interface IncomingCallEvent {
   callId: string;
   conversationId: string;
   caller: { id: string; code: string; displayName: string; avatarUrl: string | null } | null;
-  to: { personaId: string; code: string; labelKind: string; labelText: string | null };
+  to: { personaId: string; code: string; labelIcon: string; labelName: string };
 }
 
 export type CallSignal =

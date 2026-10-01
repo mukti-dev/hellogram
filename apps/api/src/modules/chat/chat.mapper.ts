@@ -1,6 +1,27 @@
-import { isClosed, messageStatus, type ConversationView, type InboxRow, type Message, type Persona } from '@hellogram/domain';
-import type { ChatCounterpartDto, ConversationDto, LockedNumberRowDto, MessageDto } from '@hellogram/shared';
+import {
+  hasContent,
+  isClosed,
+  mediaAllowed,
+  messageStatus,
+  type ConversationView,
+  type InboxRow,
+  type Message,
+  type MessageAttachment,
+  type Persona,
+} from '@hellogram/domain';
+import type { AttachmentDto, ChatCounterpartDto, ConversationDto, LockedNumberRowDto, MessageDto } from '@hellogram/shared';
 import { toOwnBrief, type AvatarUrl } from '../shared-mappers.js';
+
+/** File details for clients. Where and how it is stored never leaves the server. */
+export const toAttachmentDto = (a: MessageAttachment): AttachmentDto => ({
+  id: a.id,
+  kind: a.kind,
+  fileName: a.fileName,
+  mimeType: a.mimeType,
+  size: a.sizeBytes,
+  width: a.width,
+  height: a.height,
+});
 
 /** A message as seen by `viewerPersonaId`. */
 export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
@@ -19,6 +40,7 @@ export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
     mine,
     type: m.type,
     body: deleted ? null : m.body,
+    attachment: m.attachment && hasContent(m) ? toAttachmentDto(m.attachment) : null,
     system,
     createdAt: m.createdAt.toISOString(),
     deleted,
@@ -56,6 +78,7 @@ export function toConversationDto(
     unavailable: isClosed(view),
     retention: view.conversation.retention,
     mutedUntil: view.me.mutedUntil?.toISOString() ?? null,
+    mediaAllowed: mediaAllowed(view),
     unread: view.unread ?? 0,
     lastMessage: last ? toMessageDto(last, view.myPersona.id) : null,
     lastActivityAt: (last?.createdAt ?? view.conversation.createdAt).toISOString(),
@@ -65,6 +88,6 @@ export function toConversationDto(
 export const toLockedRow = (p: Persona): LockedNumberRowDto => ({
   personaId: p.id,
   displayName: p.displayName,
-  labelKind: p.labelKind,
-  labelText: p.labelText,
+  labelIcon: p.labelIcon,
+  labelName: p.labelName,
 });

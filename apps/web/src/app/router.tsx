@@ -1,7 +1,8 @@
 import { Navigate, createBrowserRouter } from 'react-router';
 import { RedirectIfAuthenticated, RequireAuth } from '../features/auth/components/RouteGuards.js';
-import { EmailLoginPage } from '../features/auth/pages/EmailLoginPage.js';
+import { ForgotPasswordPage } from '../features/auth/pages/ForgotPasswordPage.js';
 import { LoginPage } from '../features/auth/pages/LoginPage.js';
+import { SignupPage } from '../features/auth/pages/SignupPage.js';
 import { VerifyOtpPage } from '../features/auth/pages/VerifyOtpPage.js';
 import { BillingPage } from '../features/billing/pages/BillingPage.js';
 import { InvoicePage } from '../features/billing/pages/InvoicePage.js';
@@ -26,10 +27,17 @@ export const router = createBrowserRouter([
     path: '/login',
     children: [
       { index: true, element: <RedirectIfAuthenticated><LoginPage /></RedirectIfAuthenticated> },
-      { path: 'email', element: <RedirectIfAuthenticated><EmailLoginPage /></RedirectIfAuthenticated> },
       { path: 'verify', element: <RedirectIfAuthenticated><VerifyOtpPage /></RedirectIfAuthenticated> },
     ],
   },
+  {
+    path: '/signup',
+    children: [
+      { index: true, element: <RedirectIfAuthenticated><SignupPage /></RedirectIfAuthenticated> },
+      { path: 'verify', element: <RedirectIfAuthenticated><VerifyOtpPage /></RedirectIfAuthenticated> },
+    ],
+  },
+  { path: '/forgot-password', element: <RedirectIfAuthenticated><ForgotPasswordPage /></RedirectIfAuthenticated> },
   { path: '/terms', element: <LegalPage source={terms} /> },
   { path: '/privacy', element: <LegalPage source={privacy} /> },
   { path: '/guidelines', element: <LegalPage source={guidelines} /> },

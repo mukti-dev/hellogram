@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router';
 import { refreshAccessToken } from '../../../core/http/client.js';
 import { t } from '../../../i18n/t.js';
 import { useAuthStore } from '../model/auth-store.js';
+import { nextPath } from '../model/next-path.js';
 
 /** On first load, try the refresh cookie to restore the session (the access token lives in memory only). */
 export function useSessionBootstrap(): void {
@@ -25,14 +26,18 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const status = useAuthStore((s) => s.status);
   const location = useLocation();
   if (status === 'unknown') return <Splash />;
-  if (status === 'anonymous') return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (status === 'anonymous') {
+    const next = `${location.pathname}${location.search}`;
+    return <Navigate to={next === '/' ? '/login' : `/login?next=${encodeURIComponent(next)}`} replace />;
+  }
   return children;
 }
 
 export function RedirectIfAuthenticated({ children }: { children: ReactNode }) {
   useSessionBootstrap();
   const status = useAuthStore((s) => s.status);
+  const { search } = useLocation();
   if (status === 'unknown') return <Splash />;
-  if (status === 'authenticated') return <Navigate to="/numbers" replace />;
+  if (status === 'authenticated') return <Navigate to={nextPath(search)} replace />;
   return children;
 }

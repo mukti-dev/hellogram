@@ -58,6 +58,39 @@
         "dev"
       ],
       "port": 5174
+    },
+    {
+      "name": "api-e2e",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=4010",
+        "SMS_PROVIDER=console",
+        "OTP_BYPASS=true",
+        "PHONE_AUTH_PROVIDER=otp",
+        "CORS_ORIGINS=http://localhost:5180",
+        "RATE_LIMIT_MULTIPLIER=50",
+        "pnpm",
+        "--filter",
+        "@hellogram/api",
+        "dev"
+      ],
+      "port": 4010
+    },
+    {
+      "name": "web-e2e",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "HELLOGRAM_API_PROXY=http://localhost:4010",
+        "pnpm",
+        "--filter",
+        "@hellogram/web",
+        "exec",
+        "vite",
+        "--port",
+        "5180",
+        "--strictPort"
+      ],
+      "port": 5180
     }
   ]
 }

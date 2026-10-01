@@ -15,3 +15,6 @@ export class Argon2PinHasher implements PinHasher {
     }
   }
 }
+
+/** argon2id for account passwords (same OWASP-recommended parameters). */
+export class Argon2PasswordHasher extends Argon2PinHasher {}

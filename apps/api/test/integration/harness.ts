@@ -14,7 +14,7 @@ export interface Harness {
   devOtps: string[];
   reset(): Promise<void>;
   close(): Promise<void>;
-  /** Signs up (or logs in) a phone number via OTP bypass. */
+  /** Signs up a phone number (or, if it exists, logs in from a new device), with the bypass/dev code. */
   signUp(phone?: string): Promise<User>;
 }
 
@@ -28,6 +28,17 @@ export interface User {
     headers: Record<string, unknown>;
   }>;
 }
+
+export const TEST_PASSWORD = 'Test-Password!42';
+/** Everything sign-up needs besides the phone. */
+export const TEST_SIGNUP = {
+  name: 'Test User',
+  dateOfBirth: '1995-05-10',
+  gender: 'other',
+  password: TEST_PASSWORD,
+  termsAccepted: true,
+  consentVersion: 'test-v1',
+};
 
 let phoneCounter = 0;
 export const nextPhone = () => `9${String(100_000_000 + ((Date.now() + phoneCounter++) % 899_999_999)).padStart(9, '0')}`;
@@ -81,11 +92,28 @@ export async function createHarness(
       await db.end();
     },
     async signUp(phone = nextPhone()) {
-      const res = await app.inject({
+      const code = () => (env.OTP_BYPASS ? '123456' : (devOtps.at(-1) ?? ''));
+      const start = await app.inject({
         method: 'POST',
-        url: '/v1/auth/otp/verify',
-        payload: { phone, code: '123456', ageConfirmed: true, consentVersion: 'test-v1' },
+        url: '/v1/auth/signup',
+        payload: { ...TEST_SIGNUP, phone },
       });
+      if (start.statusCode !== 200) throw new Error(`signUp failed: ${start.body}`);
+      let res = await app.inject({
+        method: 'POST',
+        url: '/v1/auth/signup/verify',
+        payload: { signupId: start.json().signupId, code: code() },
+      });
+      if (res.statusCode === 409) {
+        // Already registered: log in from a new device (password, then the device code).
+        const login = await app.inject({ method: 'POST', url: '/v1/auth/login', payload: { phone, password: TEST_PASSWORD } });
+        if (login.statusCode !== 200) throw new Error(`login failed: ${login.body}`);
+        res = await app.inject({
+          method: 'POST',
+          url: '/v1/auth/login/verify',
+          payload: { ticket: login.json().ticket, code: code() },
+        });
+      }
       if (res.statusCode !== 200) throw new Error(`signUp failed: ${res.body}`);
       const token = res.json().accessToken as string;
       const refresh = res.cookies.find((c) => c.name === 'hg_rt')?.value ?? '';

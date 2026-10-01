@@ -1,16 +1,16 @@
-import type { LabelKind } from '@hellogram/shared';
-import { FilterChip, LabelChip } from '@hellogram/ui';
+import { FilterChip } from '@hellogram/ui';
 import { Lock, MessageSquareText, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../../app/layouts/PageHeader.js';
 import { t } from '../../../i18n/t.js';
-import { labelName } from '../../../shared/format.js';
+
 import { useNumbers } from '../../numbers/model/queries.js';
 import { openUnlock } from '../../pin/model/unlock-ui.js';
 import { RequestsBanner } from '../../requests/components/RequestsBanner.js';
 import type { InboxFilter } from '../api/chat.api.js';
 import { useInbox } from '../model/queries.js';
 import { ConversationRow } from './ConversationRow.js';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -23,7 +23,7 @@ function useDebounced<T>(value: T, ms: number): T {
 
 /** Unified inbox across all numbers (screen 7). */
 export function ConversationList() {
-  const [label, setLabel] = useState<LabelKind | undefined>();
+  const [label, setLabel] = useState<string | undefined>();
   const [unread, setUnread] = useState(false);
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState('');
@@ -32,9 +32,13 @@ export function ConversationList() {
   const inbox = useInbox(filter);
   const numbers = useNumbers().data?.items;
 
+  // One filter per label the user has written ("OLX", "Dating"…), however many numbers share it.
   const labels = useMemo(() => {
-    const seen = new Map<LabelKind, { labelKind: LabelKind; labelText: string | null }>();
-    for (const n of numbers ?? []) if (!seen.has(n.labelKind)) seen.set(n.labelKind, n);
+    const seen = new Map<string, { labelIcon: string; labelName: string }>();
+    for (const n of numbers ?? []) {
+      const key = n.labelName.toLocaleLowerCase();
+      if (!seen.has(key)) seen.set(key, n);
+    }
     return [...seen.values()];
   }, [numbers]);
 
@@ -80,8 +84,12 @@ export function ConversationList() {
           {t('inbox.filters.all')}
         </FilterChip>
         {labels.map((l) => (
-          <FilterChip key={l.labelKind} selected={label === l.labelKind} onClick={() => setLabel(label === l.labelKind ? undefined : l.labelKind)}>
-            <LabelChip kind={l.labelKind} text={labelName(l)} className="bg-transparent px-0 text-sm" />
+          <FilterChip
+            key={l.labelName}
+            selected={label === l.labelName}
+            onClick={() => setLabel(label === l.labelName ? undefined : l.labelName)}
+          >
+            <NumberLabel of={l} className="bg-transparent px-0 text-sm" />
           </FilterChip>
         ))}
         <FilterChip selected={unread} onClick={() => setUnread((u) => !u)}>
@@ -107,7 +115,7 @@ export function ConversationList() {
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2">
                 <span className="truncate text-sm font-semibold">{n.displayName}</span>
-                <LabelChip kind={n.labelKind} text={labelName(n)} />
+                <NumberLabel of={n} />
               </span>
               <span className="flex items-center gap-1 text-sm text-muted">
                 <Lock className="size-3" aria-hidden /> {t('chat.locked')}

@@ -1,3 +1,4 @@
+import { toLabelIcon } from './mappers.js';
 import { Prisma } from '@hellogram/db';
 import { invoiceNumber, type BillingRepository, type DraftRow, type PaymentRecord, type Subscription } from '@hellogram/domain';
 import type { PrismaClient } from '@hellogram/db';
@@ -17,9 +18,10 @@ const draftSelect = {
   id: true,
   accountId: true,
   displayName: true,
-  labelKind: true,
-  labelText: true,
+  labelIcon: true,
+  labelName: true,
   allowCalls: true,
+  allowMedia: true,
 } as const;
 
 const paymentSelect = { id: true, invoiceNo: true, amountPaise: true, gstPaise: true, paidAt: true } as const;
@@ -50,28 +52,28 @@ export class PrismaBillingRepository implements BillingRepository {
   createDraft(input: {
     accountId: string;
     displayName: string;
-    labelKind: string;
-    labelText: string | null;
+    labelIcon: string;
+    labelName: string;
     allowCalls: boolean;
+    allowMedia: boolean;
     providerRef: string;
     expiresAt: Date;
   }) {
-    return this.db.personaDraft.create({
-      data: { ...input, labelKind: input.labelKind as DraftRow['labelKind'] },
-      select: { id: true },
-    });
+    return this.db.personaDraft.create({ data: input, select: { id: true } });
   }
 
-  openDraftsFor(providerSubId: string, now: Date): Promise<DraftRow[]> {
-    return this.db.personaDraft.findMany({
+  async openDraftsFor(providerSubId: string, now: Date): Promise<DraftRow[]> {
+    const rows = await this.db.personaDraft.findMany({
       where: { providerRef: providerSubId, consumedAt: null, expiresAt: { gt: now } },
       orderBy: { expiresAt: 'asc' },
       select: draftSelect,
     });
+    return rows.map((r) => ({ ...r, labelIcon: toLabelIcon(r.labelIcon) }));
   }
 
-  findDraft(id: string, accountId: string) {
-    return this.db.personaDraft.findFirst({ where: { id, accountId }, select: { ...draftSelect, consumedPersonaId: true } });
+  async findDraft(id: string, accountId: string) {
+    const row = await this.db.personaDraft.findFirst({ where: { id, accountId }, select: { ...draftSelect, consumedPersonaId: true } });
+    return row && { ...row, labelIcon: toLabelIcon(row.labelIcon) };
   }
 
   async consumeDraft(id: string, personaId: string, at: Date): Promise<boolean> {

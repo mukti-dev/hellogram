@@ -1,14 +1,15 @@
 import type { CallLogEntryDto } from '@hellogram/shared';
-import { Avatar, FilterChip, LabelChip, cn } from '@hellogram/ui';
+import { Avatar, FilterChip, cn } from '@hellogram/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Phone, PhoneIncoming, PhoneMissed, PhoneOutgoing } from 'lucide-react';
 import { useState } from 'react';
 import { EmptyState, PageHeader } from '../../../app/layouts/PageHeader.js';
 import { t } from '../../../i18n/t.js';
-import { clockTime, dayLabel, labelName } from '../../../shared/format.js';
+import { clockTime, dayLabel } from '../../../shared/format.js';
 import { useNumbers } from '../../numbers/model/queries.js';
 import { callsApi } from '../api/calls.api.js';
 import { useCallStore } from '../model/call-store.js';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 const duration = (s: number | null) => (s === null ? '' : ` · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
 
@@ -56,7 +57,7 @@ export function CallsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className={cn('truncate text-sm font-semibold', missed && 'text-danger')}>{e.counterpart.displayName}</p>
-                      <LabelChip kind={e.me.labelKind} text={labelName(e.me)} prefix={t('chat.via')} />
+                      <NumberLabel of={e.me} prefix={t('chat.via')} />
                     </div>
                     <p className="flex items-center gap-1.5 text-xs text-muted">
                       <Icon className={cn('size-3.5', missed ? 'text-danger' : 'text-muted')} aria-hidden />
@@ -71,8 +72,8 @@ export function CallsPage() {
                       void start(e.conversationId, {
                         name: e.counterpart.displayName,
                         avatarUrl: e.counterpart.avatarUrl,
-                        labelKind: e.me.labelKind,
-                        labelText: e.me.labelText,
+                        labelIcon: e.me.labelIcon,
+                        labelName: e.me.labelName,
                         code: e.counterpart.code,
                       })
                     }

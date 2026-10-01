@@ -3,10 +3,12 @@ import { Bell, ChevronRight, Crown, Plus, Smartphone } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
 import { EmptyState, PageHeader } from '../../../app/layouts/PageHeader.js';
 import { t } from '../../../i18n/t.js';
+import { useMe } from '../../auth/model/queries.js';
 import { NumberCard } from '../components/NumberCard.js';
 import { useNumbers } from '../model/queries.js';
 
 export function MyNumbersPage() {
+  const me = useMe();
   const navigate = useNavigate();
   const { data, isLoading } = useNumbers();
   const plan = data?.plan;
@@ -29,7 +31,7 @@ export function MyNumbersPage() {
             aria-label={t('profile.open')}
             className="inline-flex size-11 items-center justify-center rounded-full hover:bg-surface-2"
           >
-            <Avatar name={t('common.myAccount')} size={36} />
+            <Avatar name={me.data?.name ?? t('common.myAccount')} size={36} />
           </Link>
         </div>
       </div>

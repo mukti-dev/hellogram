@@ -10,9 +10,13 @@ async function audit(page: Page, name: string) {
   expect(summary, `${name} has accessibility violations`).toEqual([]);
 }
 
-test('login, OTP and legal pages', async ({ page }) => {
+test('login, sign-up, forgot password and legal pages', async ({ page }) => {
   await page.goto('/login');
   await audit(page, 'login');
+  await page.goto('/signup');
+  await audit(page, 'sign-up');
+  await page.goto('/forgot-password');
+  await audit(page, 'forgot password');
   await page.goto('/privacy');
   await audit(page, 'privacy');
   await page.goto('/grievance');

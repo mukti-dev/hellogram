@@ -10,6 +10,7 @@ const msg = (over: Partial<Message> = {}): Message => ({
   clientMessageId: 'x',
   type: 'text',
   body: 'hi',
+  attachment: null,
   systemPayload: null,
   suppressed: false,
   createdAt: NOW,
@@ -34,10 +35,9 @@ describe('messages (rules 17, 19)', () => {
     expect(messageStatus(msg({ deliveredAt: NOW, readAt: NOW }))).toBe('read');
   });
 
-  it('delete for everyone: own messages only, within 60 minutes', () => {
-    expect(() => assertCanDeleteForEveryone(msg(), 'me', new Date(NOW.getTime() + 59 * 60_000))).not.toThrow();
-    expect(() => assertCanDeleteForEveryone(msg(), 'me', new Date(NOW.getTime() + 61 * 60_000))).toThrowError(/60 minutes/);
-    expect(() => assertCanDeleteForEveryone(msg(), 'someone-else', NOW)).toThrow(DomainError);
+  it('delete for everyone: any chat message, but not system notices', () => {
+    expect(() => assertCanDeleteForEveryone(msg())).not.toThrow();
+    expect(() => assertCanDeleteForEveryone(msg({ type: 'system', body: null }))).toThrow(DomainError);
   });
 });
 

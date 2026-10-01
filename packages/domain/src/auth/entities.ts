@@ -1,8 +1,14 @@
+import type { Gender } from '@hellogram/shared';
+
 export type AccountStatus = 'active' | 'suspended' | 'banned' | 'deleted';
 
 export interface Account {
   id: string;
   phone: string;
+  /** Private: only ever returned to the account itself. Null until asked at first sign-in. */
+  name: string | null;
+  dateOfBirth: Date | null;
+  gender: Gender | null;
   email: string | null;
   emailVerifiedAt: Date | null;
   status: AccountStatus;
@@ -15,6 +21,8 @@ export interface Session {
   accountId: string;
   deviceName: string | null;
   userAgent: string | null;
+  /** HMAC of the device cookie, to forget the device when this session is logged out remotely. */
+  deviceHash?: string | null;
   createdAt: Date;
   lastSeenAt: Date;
   expiresAt: Date;
@@ -29,7 +37,16 @@ export interface RefreshTokenRecord {
 }
 
 export type OtpChannel = 'sms' | 'email';
-export type OtpPurpose = 'login' | 'email_login' | 'email_verify' | 'pin_reset' | 'phone_change' | 'account_delete';
+export type OtpPurpose =
+  | 'login'
+  | 'signup'
+  | 'device_login'
+  | 'password_reset'
+  | 'email_login'
+  | 'email_verify'
+  | 'pin_reset'
+  | 'phone_change'
+  | 'account_delete';
 
 export interface OtpChallenge {
   id: string;
@@ -37,6 +54,8 @@ export interface OtpChallenge {
   targetHash: string;
   purpose: OtpPurpose;
   codeHash: string;
+  /** Set when an outside service made the code and checks it (e.g. Message Central). */
+  providerRef?: string | null;
   attempts: number;
   expiresAt: Date;
   consumedAt: Date | null;

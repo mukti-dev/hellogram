@@ -22,7 +22,8 @@ Target: one AWS Lightsail 4 GB instance in Mumbai (ap-south-1), Docker Compose, 
    docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production up -d
    ```
 6. **First admin**: `docker compose … exec admin-api sh -c 'ADMIN_PASSWORD=… node dist/cli/create-admin.js you@company.com admin'`
-   (or run `pnpm --filter @hellogram/admin-api create-admin` from a machine with DB access). Scan the printed TOTP URL.
+   (or run `pnpm --filter @hellogram/admin-api create-admin` from a machine with DB access). Scan the printed QR code
+   (`node dist/cli/admin-qr.js <email>` shows it again).
 7. **Verify**: `https://hellogram.app/health/ready` → `ok`; sign up with a real phone; place a test call between two networks.
 
 The API **refuses to start** in production with `OTP_BYPASS=true`, the dev payment simulator, console SMS/email,
@@ -102,3 +103,80 @@ malicious code, attacks on servers/apps, DoS/DDoS) must be reported to **CERT-In
   to "managed"; temporarily lower OTP per-IP limits; block ASNs at Cloudflare.
 - **Spam wave**: Admin → Reports; bulk-suspend with a shared reason; consider raising the new-number weekly limit.
 - **Stuck calls**: the worker marks calls still ringing after 60 s as missed and releases the per-account call lock.
+
+---
+
+## 8. Chat attachments (S3 + encryption key)
+
+Photos and files are encrypted by the API (AES-256-GCM, one key per file derived from `ATTACHMENT_ENCRYPTION_KEY`)
+**before** upload, stored under random names, and served only by `GET /v1/attachments/:id` after the access checks.
+S3 never holds anything readable, and no public or pre-signed link is ever created.
+
+### One-time S3 setup (AWS console, region ap-south-1 / Mumbai)
+
+1. **Create the bucket** — S3 → Create bucket.
+   - Name: e.g. `hellogram-attachments-prod` (globally unique). Region: **Asia Pacific (Mumbai) ap-south-1**.
+   - Object Ownership: **ACLs disabled**.
+   - **Block all public access: ON** (all four boxes).
+   - Bucket Versioning: **Disabled** — with versioning on, a "deleted" file would survive as an old version and
+     disappearing messages would not really disappear.
+   - Default encryption: **SSE-S3**. (A second layer; the real protection is our own key.)
+2. **Bucket policy** (Permissions → Bucket policy) — refuse anything not over TLS:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Sid": "DenyInsecureTransport",
+       "Effect": "Deny",
+       "Principal": "*",
+       "Action": "s3:*",
+       "Resource": ["arn:aws:s3:::hellogram-attachments-prod", "arn:aws:s3:::hellogram-attachments-prod/*"],
+       "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+     }]
+   }
+   ```
+3. **Lifecycle rule** (Management → Create lifecycle rule, whole bucket): "Delete expired object delete markers or
+   incomplete multipart uploads" → abort incomplete multipart uploads after **1 day**. Do **not** add an expiry rule
+   for objects: the worker deletes files when their message goes.
+4. **IAM policy** (IAM → Policies → Create → JSON), name `hellogram-attachments-rw` — objects only, no listing:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+       "Resource": "arn:aws:s3:::hellogram-attachments-prod/att/*"
+     }]
+   }
+   ```
+5. **Credentials**
+   - Lightsail (no instance roles): IAM → Users → Create user `hellogram-api` (no console access) → attach the policy
+     → Security credentials → Create access key ("Application running outside AWS") → put the two values in
+     `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`.
+   - EC2: attach the policy to the instance role and leave both variables empty.
+6. **Encryption key**: `openssl rand -base64 32` → `ATTACHMENT_ENCRYPTION_KEY`. Store a copy in a password manager
+   or AWS Secrets Manager, **separate from the server and from S3**. If the key is lost, every stored file is
+   unreadable for good; if it leaks *together with* bucket access, files can be read.
+7. **Environment** (`infra/.env.production`, used by both `api` and `worker`):
+   ```
+   ATTACHMENT_STORAGE=s3
+   ATTACHMENT_ENCRYPTION_KEY=<from step 6>
+   S3_BUCKET=hellogram-attachments-prod
+   S3_REGION=ap-south-1
+   S3_ACCESS_KEY_ID=<step 5>
+   S3_SECRET_ACCESS_KEY=<step 5>
+   ```
+   The API and worker refuse to start in production without S3 and a non-default key.
+8. **Verify**: send a photo in a chat, then open the object in the S3 console — it must be a file with a random name
+   that starts with `HGF` and shows no image. Delete the message for everyone → the object disappears.
+
+### Rotating the encryption key
+Generate a new key, move the current one into `ATTACHMENT_ENCRYPTION_KEYS_OLD` (comma-separated), set the new one as
+`ATTACHMENT_ENCRYPTION_KEY`, restart `api` and `worker`. New files use the new key; older files stay readable while
+their key is in the OLD list. Remove an old key only when no chat can still hold files from that period.
+
+### If something goes wrong
+- *Downloads fail with 500 after a deploy*: the key changed without keeping the old one → restore it in `..._KEYS_OLD`.
+- *S3 outage*: uploads and downloads fail, chats keep working. Deleted/expired files stay in S3 until the
+  `attachments.sweep` job (every 10 minutes) succeeds again — it retries by itself.
+- *Suspected key leak*: rotate (above), rotate the IAM access key, and treat it as a personal data breach (§3).

@@ -12,6 +12,7 @@ import { pinApi } from '../api/pin.api.js';
 import { useUnlockTokens } from '../model/unlock-tokens.js';
 import { useUnlockUi } from '../model/unlock-ui.js';
 import { PinPad } from './PinPad.js';
+import { OtpDeliveryNote } from '../../auth/components/OtpDeliveryNote.js';
 
 type Step = 'pin' | 'reset-warn' | 'reset-code' | 'reset-new' | 'reset-confirm';
 
@@ -114,6 +115,7 @@ function Unlock({ personaId }: { personaId: string }) {
           >
             {t('pin.sendCode')}
           </Button>
+          <OtpDeliveryNote when="before" className="text-left" />
           <p role="alert" className="text-sm text-danger">{error}</p>
         </div>
       )}
@@ -121,6 +123,7 @@ function Unlock({ personaId }: { personaId: string }) {
       {step === 'reset-code' && (
         <div className="mt-6 flex w-full max-w-sm flex-col gap-4">
           <p className="text-center text-sm text-muted">{t('pin.codeSent')}</p>
+          <OtpDeliveryNote when="after" className="text-left" />
           <OtpInput
             value={code}
             onChange={setCode}

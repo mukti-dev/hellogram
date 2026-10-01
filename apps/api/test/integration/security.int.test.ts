@@ -101,7 +101,7 @@ describe('abuse and SSRF', () => {
     for (let i = 0; i < 12; i++) {
       const res = await h.app.inject({
         method: 'POST',
-        url: '/v1/auth/otp/send',
+        url: '/v1/auth/password/forgot',
         payload: { phone: `98${String(10000000 + i)}` },
         headers: { 'x-forwarded-for': `10.0.${i}.1` },
       });

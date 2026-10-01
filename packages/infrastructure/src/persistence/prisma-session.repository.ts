@@ -6,6 +6,7 @@ const select = {
   accountId: true,
   deviceName: true,
   userAgent: true,
+  deviceHash: true,
   createdAt: true,
   lastSeenAt: true,
   expiresAt: true,

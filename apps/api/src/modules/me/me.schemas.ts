@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 export const meResponse = z.object({
   phone: z.string(),
+  name: z.string().nullable(),
+  dateOfBirth: z.string().nullable(),
+  gender: z.enum(['male', 'female', 'other', 'prefer_not_to_say']).nullable(),
   email: z.string().nullable(),
   emailVerified: z.boolean(),
   createdAt: z.string(),
@@ -20,6 +23,7 @@ export const sessionsResponse = z.object({
   ),
 });
 
+export const updateMeBody = z.object({ name: z.string().max(200) });
 export const sessionParams = z.object({ id: z.uuid() });
 export const startEmailBody = z.object({ email: z.email().max(254) });
 export const confirmEmailBody = z.object({ email: z.email().max(254), code: z.string().trim().max(10) });

@@ -20,7 +20,8 @@
 	encode zstd gzip
 
 	# Tight CSP: our own origin, Razorpay checkout, Cloudflare Turnstile, Firebase Phone Auth (+ reCAPTCHA).
-	header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com https://apis.google.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com https://www.google.com https://*.firebaseapp.com; connect-src 'self' wss://{$APP_DOMAIN} https://lumberjack.razorpay.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://www.google.com; img-src 'self' data: blob: https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	# "?" = only when the API didn't send its own (chat files come with a stricter `default-src 'none'; sandbox`).
+	header ?Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com https://apis.google.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://challenges.cloudflare.com https://www.google.com https://*.firebaseapp.com; connect-src 'self' wss://{$APP_DOMAIN} https://lumberjack.razorpay.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://www.google.com; img-src 'self' data: blob: https://www.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 	handle /v1/* {
 		reverse_proxy api:4000

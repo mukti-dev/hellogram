@@ -1,42 +1,41 @@
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn.js';
 
-export type LabelKind = 'olx' | 'dating' | 'tenants' | 'other';
+/** Colour families for a number's label (picked by its icon, so labels look consistent). */
+export type LabelTone = 'amber' | 'pink' | 'blue' | 'violet' | 'gray';
 
-const labelStyles: Record<LabelKind, string> = {
-  olx: 'bg-label-olx/15 text-label-olx',
-  dating: 'bg-label-dating/15 text-label-dating',
-  tenants: 'bg-label-tenants/15 text-label-tenants',
-  other: 'bg-label-other/15 text-label-other',
-};
-
-const DEFAULT_LABEL_TEXT: Record<LabelKind, string> = {
-  olx: 'OLX',
-  dating: 'Dating',
-  tenants: 'Tenants',
-  other: 'Other',
+const toneStyles: Record<LabelTone, string> = {
+  amber: 'bg-label-olx/15 text-label-olx',
+  pink: 'bg-label-dating/15 text-label-dating',
+  blue: 'bg-label-tenants/15 text-label-tenants',
+  violet: 'bg-primary/15 text-primary',
+  gray: 'bg-label-other/15 text-label-other',
 };
 
 export interface LabelChipProps extends HTMLAttributes<HTMLSpanElement> {
-  kind: LabelKind;
-  /** Custom text for `other` labels. */
-  text?: string;
+  /** The user's own label text, e.g. "OLX". */
+  name: string;
+  icon?: ReactNode;
+  tone?: LabelTone;
   /** Renders "via OLX" as used in inbox and chat headers. */
   prefix?: string;
 }
 
-export function LabelChip({ kind, text, prefix, className, ...rest }: LabelChipProps) {
+export function LabelChip({ name, icon, tone = 'gray', prefix, className, ...rest }: LabelChipProps) {
   return (
     <span
       className={cn(
-        'inline-flex h-5 items-center rounded-full px-2 text-[11px] font-semibold leading-none',
-        labelStyles[kind],
+        'inline-flex h-5 max-w-[12rem] items-center gap-1 rounded-full px-2 text-[11px] font-semibold leading-none',
+        toneStyles[tone],
         className,
       )}
       {...rest}
     >
-      {prefix ? `${prefix} ` : ''}
-      {text ?? DEFAULT_LABEL_TEXT[kind]}
+      {icon && <span className="inline-flex shrink-0 [&>svg]:size-3">{icon}</span>}
+      <span className="truncate">
+        {prefix ? `${prefix} ` : ''}
+        {name}
+      </span>
     </span>
   );
 }
@@ -72,7 +71,7 @@ export interface FilterChipProps extends HTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
 }
 
-/** Inbox label filters (All / OLX / Dating / Tenants / Unread). */
+/** Inbox filters (All / each of the user's own labels / Unread). */
 export function FilterChip({ selected, className, ...rest }: FilterChipProps) {
   return (
     <button

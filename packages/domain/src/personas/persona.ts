@@ -1,4 +1,4 @@
-import { ErrorCode, LIMITS, type LabelKind, type Retention } from '@hellogram/shared';
+import { ErrorCode, LABEL_ICONS, LIMITS, type LabelIcon, type Retention } from '@hellogram/shared';
 import { DomainError } from '../errors/domain-error.js';
 
 export type PersonaStatus = 'active' | 'paused' | 'retired';
@@ -10,13 +10,15 @@ export interface Persona {
   code: string;
   displayName: string;
   avatarKey: string | null;
-  labelKind: LabelKind;
-  labelText: string | null;
+  labelIcon: LabelIcon;
+  /** The user's own label (free text, e.g. "OLX"). Private: never shown to others. */
+  labelName: string;
   status: PersonaStatus;
   pauseReason: PauseReason | null;
   isPaid: boolean;
   acceptRequests: boolean;
   allowCalls: boolean;
+  allowMedia: boolean;
   readReceipts: boolean;
   dndUntil: Date | null;
   defaultRetention: Retention;
@@ -74,13 +76,15 @@ export function normalizeDisplayName(input: string): string {
   return name;
 }
 
-export function normalizeLabel(kind: LabelKind, text?: string | null): { labelKind: LabelKind; labelText: string | null } {
-  if (kind !== 'other') return { labelKind: kind, labelText: null };
-  const clean = text?.trim() ?? '';
-  if (clean.length > LIMITS.LABEL_TEXT_MAX) {
-    throw new DomainError(ErrorCode.VALIDATION_FAILED, 'Label must be at most 16 characters');
+/** A label is the user's own words plus an icon from the set. No presets. */
+export function normalizeLabel(name: string, icon: string): { labelName: string; labelIcon: LabelIcon } {
+  const clean = name.replace(/\p{Cc}/gu, '').replace(/\s+/g, ' ').trim();
+  if (!clean) throw new DomainError(ErrorCode.VALIDATION_FAILED, 'Give this number a label, e.g. OLX or Dating');
+  if (clean.length > LIMITS.LABEL_NAME_MAX) {
+    throw new DomainError(ErrorCode.VALIDATION_FAILED, `Labels can be up to ${LIMITS.LABEL_NAME_MAX} characters`);
   }
-  return { labelKind: 'other', labelText: clean || null };
+  if (!(LABEL_ICONS as readonly string[]).includes(icon)) throw new DomainError(ErrorCode.VALIDATION_FAILED, 'Choose an icon');
+  return { labelName: clean, labelIcon: icon as LabelIcon };
 }
 
 /** DND counts only while its end time is in the future. */

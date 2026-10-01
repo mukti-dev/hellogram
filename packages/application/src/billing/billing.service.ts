@@ -17,6 +17,7 @@ import {
   type RateLimiter,
   type Subscription,
 } from '@hellogram/domain';
+import type { LabelIcon } from '@hellogram/shared';
 import { ErrorCode, LIMITS } from '@hellogram/shared';
 import type { CheckoutInfo, NewPersonaInput, PaidNumberCheckout, PersonaService } from '../personas/persona.service.js';
 
@@ -51,16 +52,17 @@ export class BillingService implements PaidNumberCheckout {
     },
   ) {}
 
-  async start(actor: Actor, input: NewPersonaInput & { labelText: string | null }): Promise<CheckoutInfo> {
+  async start(actor: Actor, input: NewPersonaInput & { labelIcon: LabelIcon }): Promise<CheckoutInfo> {
     const live = await this.deps.personas.listByAccount(actor.accountId);
     const quantity = planSummary(live).paid + 1;
     const now = this.deps.clock.now();
     const draftFields = {
       accountId: actor.accountId,
       displayName: input.displayName,
-      labelKind: input.labelKind,
-      labelText: input.labelText,
+      labelIcon: input.labelIcon,
+      labelName: input.labelName,
       allowCalls: input.allowCalls,
+      allowMedia: input.allowMedia,
       expiresAt: new Date(now.getTime() + DRAFT_TTL_MS),
     };
 
@@ -249,15 +251,16 @@ export class BillingService implements PaidNumberCheckout {
 
   private async createFromDraft(
     draftId: string,
-    d: { accountId: string; displayName: string; labelKind: Persona['labelKind']; labelText: string | null; allowCalls: boolean },
+    d: { accountId: string; displayName: string; labelIcon: Persona['labelIcon']; labelName: string; allowCalls: boolean; allowMedia: boolean },
     now: Date,
   ): Promise<Persona> {
     const persona = await this.deps.personaService.createWithUniqueCode({
       accountId: d.accountId,
       displayName: d.displayName,
-      labelKind: d.labelKind,
-      labelText: d.labelText,
+      labelIcon: d.labelIcon,
+      labelName: d.labelName,
       allowCalls: d.allowCalls,
+      allowMedia: d.allowMedia,
       isPaid: true,
     });
     await this.deps.billing.consumeDraft(draftId, persona.id, now);

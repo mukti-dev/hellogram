@@ -19,7 +19,7 @@ export const securityPlugin = fp<SecurityOptions>(async (app: FastifyInstance, o
     origin: options.corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Persona-Unlock', 'X-Hellogram-Client', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Persona-Unlock', 'X-Hellogram-Client', 'X-Request-Id', 'X-File-Name'],
   });
   await app.register(cookie);
 });

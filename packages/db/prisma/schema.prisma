@@ -26,11 +26,21 @@ enum OtpChannel {
 
 enum OtpPurpose {
   login
+  signup
+  device_login
+  password_reset
   email_login
   email_verify
   pin_reset
   phone_change
   account_delete
+}
+
+enum Gender {
+  male
+  female
+  other
+  prefer_not_to_say
 }
 
 enum PersonaStatus {
@@ -45,12 +55,6 @@ enum PauseReason {
   admin
 }
 
-enum LabelKind {
-  olx
-  dating
-  tenants
-  other
-}
 
 enum Retention {
   forever
@@ -71,6 +75,11 @@ enum RequestStatus {
 enum MessageType {
   text
   system
+}
+
+enum AttachmentKind {
+  image
+  file
 }
 
 enum CallStatus {
@@ -157,6 +166,12 @@ enum ExportStatus {
 model Account {
   id              String        @id @default(uuid()) @db.Uuid
   phone           String        @unique
+  /// The person's own name: private, shown only in their own app (others see each number's name).
+  name            String?       @db.VarChar(60)
+  /// argon2id. Null only for accounts created before passwords (they set one via "Forgot password").
+  passwordHash    String?
+  dateOfBirth     DateTime?     @db.Date
+  gender          Gender?
   email           String?       @unique
   emailVerifiedAt DateTime?     @db.Timestamptz
   ageConfirmedAt  DateTime      @db.Timestamptz
@@ -167,6 +182,7 @@ model Account {
   deletedAt       DateTime?     @db.Timestamptz
 
   sessions       Session[]
+  trustedDevices TrustedDevice[]
   consents       ConsentRecord[]
   phoneChanges   PhoneChange[]
   personas       Persona[]
@@ -207,12 +223,27 @@ model PhoneChange {
   @@map("phone_changes")
 }
 
+/// Devices whose mobile number check (OTP) has been done: logging in there needs only the password.
+model TrustedDevice {
+  id         String   @id @default(uuid()) @db.Uuid
+  accountId  String   @db.Uuid
+  deviceHash String
+  createdAt  DateTime @default(now()) @db.Timestamptz
+  lastUsedAt DateTime @default(now()) @db.Timestamptz
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, deviceHash])
+  @@map("trusted_devices")
+}
+
 model Session {
   id           String         @id @default(uuid()) @db.Uuid
   accountId    String         @db.Uuid
   deviceName   String?
   userAgent    String?
   ipHash       String?
+  /// The browser/app install this session lives on (HMAC of its device cookie).
+  deviceHash   String?
   createdAt    DateTime       @default(now()) @db.Timestamptz
   lastSeenAt   DateTime       @default(now()) @db.Timestamptz
   expiresAt    DateTime       @db.Timestamptz
@@ -243,6 +274,8 @@ model OtpChallenge {
   targetHash String
   purpose    OtpPurpose
   codeHash   String
+  /// Outside verification service's id for this code (Message Central); codeHash is unused then.
+  providerRef String?
   attempts   Int        @default(0)
   expiresAt  DateTime   @db.Timestamptz
   consumedAt DateTime?  @db.Timestamptz
@@ -261,13 +294,17 @@ model Persona {
   code             String        @unique @db.VarChar(9)
   displayName      String        @db.VarChar(40)
   avatarKey        String?
-  labelKind        LabelKind     @default(other)
-  labelText        String?       @db.VarChar(16)
+  /// The user's own label (free text, e.g. "OLX"), shown only to them.
+  labelName        String        @db.VarChar(20)
+  /// Icon key from LABEL_ICONS (packages/shared).
+  labelIcon        String        @default("tag") @db.VarChar(24)
   status           PersonaStatus @default(active)
   pauseReason      PauseReason?
   isPaid           Boolean       @default(false)
   acceptRequests   Boolean       @default(true)
   allowCalls       Boolean       @default(true)
+  /// Photos and files in this number's chats (both numbers must allow them).
+  allowMedia       Boolean       @default(true)
   readReceipts     Boolean       @default(true)
   dndUntil         DateTime?     @db.Timestamptz
   defaultRetention Retention     @default(d30)
@@ -308,9 +345,10 @@ model PersonaDraft {
   id          String    @id @default(uuid()) @db.Uuid
   accountId   String    @db.Uuid
   displayName String    @db.VarChar(40)
-  labelKind   LabelKind
-  labelText   String?   @db.VarChar(16)
+  labelName   String    @db.VarChar(20)
+  labelIcon   String    @default("tag") @db.VarChar(24)
   allowCalls  Boolean   @default(true)
+  allowMedia  Boolean   @default(true)
   providerRef       String?
   expiresAt         DateTime  @db.Timestamptz
   consumedAt        DateTime? @db.Timestamptz
@@ -398,11 +436,35 @@ model Message {
   conversation         Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender               Persona       @relation(fields: [senderPersonaId], references: [id])
   hiddenFor            MessageHide[]
+  attachment           Attachment?
 
   @@unique([senderPersonaId, clientMessageId])
   @@index([conversationId, createdAt])
   @@index([createdAt])
   @@map("messages")
+}
+
+/// A file shared in a chat. The bytes live in object storage, encrypted by the API
+/// (AES-256-GCM, key from the environment) under a random key name.
+/// `messageId` is NULL until the upload is sent, and again once the message is gone:
+/// the worker deletes the stored object for every row without a live message.
+model Attachment {
+  id                String         @id @default(uuid()) @db.Uuid
+  conversationId    String         @db.Uuid
+  uploaderPersonaId String         @db.Uuid
+  messageId         String?        @unique @db.Uuid
+  kind              AttachmentKind
+  mimeType          String         @db.VarChar(100)
+  fileName          String         @db.VarChar(160)
+  sizeBytes         Int
+  width             Int?
+  height            Int?
+  storageKey        String         @unique @db.VarChar(80)
+  createdAt         DateTime       @default(now()) @db.Timestamptz
+  message           Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@map("attachments")
 }
 
 model MessageHide {

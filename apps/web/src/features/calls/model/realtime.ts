@@ -10,8 +10,8 @@ onRealtime('call:incoming', (client) => (event: IncomingCallEvent) => {
   useCallStore.getState().receiveIncoming(event, {
     name: event.caller ? (conversation?.nickname ?? event.caller.displayName) : 'Incoming call',
     avatarUrl: event.caller?.avatarUrl ?? null,
-    labelKind: event.to.labelKind,
-    labelText: event.to.labelText,
+    labelIcon: event.to.labelIcon,
+    labelName: event.to.labelName,
     code: event.to.code,
   });
   void client.invalidateQueries({ queryKey: ['calls'] });

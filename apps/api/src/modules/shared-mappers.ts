@@ -15,6 +15,6 @@ export const toOwnBrief = (p: Persona): OwnPersonaBriefDto => ({
   id: p.id,
   code: p.code,
   displayName: p.displayName,
-  labelKind: p.labelKind,
-  labelText: p.labelText,
+  labelIcon: p.labelIcon,
+  labelName: p.labelName,
 });

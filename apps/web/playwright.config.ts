@@ -7,6 +7,8 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
+  // Refuses to run while the local API would send real SMS/calls to the tests' made-up numbers.
+  globalSetup: './e2e/global-setup.ts',
   timeout: 30_000,
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:5173',

@@ -2,6 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import type {
   AccessTokenIssuer,
   Account,
+  EphemeralStore,
+  PasswordHasher,
+  TrustedDeviceRepository,
   AccountRepository,
   AuthRepositories,
   Clock,
@@ -39,10 +42,22 @@ export class FakeAccounts implements AccountRepository {
   findByPhone = async (phone: string) => this.rows.find((a) => a.phone === phone) ?? null;
   findByVerifiedEmail = async (email: string) =>
     this.rows.find((a) => a.email === email && a.emailVerifiedAt) ?? null;
-  create = async (input: { phone: string; ageConfirmedAt: Date; consentVersion: string }) => {
+  passwords = new Map<string, string>();
+  create = async (input: {
+    phone: string;
+    name?: string;
+    passwordHash?: string;
+    dateOfBirth?: Date;
+    gender?: Account['gender'];
+    ageConfirmedAt: Date;
+    consentVersion: string;
+  }) => {
     const account = {
       id: randomUUID(),
       phone: input.phone,
+      name: input.name ?? null,
+      dateOfBirth: input.dateOfBirth ?? null,
+      gender: input.gender ?? null,
       email: null,
       emailVerifiedAt: null,
       status: 'active' as const,
@@ -51,11 +66,18 @@ export class FakeAccounts implements AccountRepository {
       consentVersion: input.consentVersion,
     };
     this.rows.push(account);
+    if (input.passwordHash) this.passwords.set(account.id, input.passwordHash);
     return account;
   };
+  findPasswordHash = async (accountId: string) => this.passwords.get(accountId) ?? null;
+  setPasswordHash = async (accountId: string, hash: string) => void this.passwords.set(accountId, hash);
   setVerifiedEmail = async (accountId: string, email: string, at: Date) => {
     const a = this.rows.find((r) => r.id === accountId);
     if (a) Object.assign(a, { email, emailVerifiedAt: at });
+  };
+  setName = async (accountId: string, name: string) => {
+    const a = this.rows.find((r) => r.id === accountId);
+    if (a) a.name = name;
   };
   isEmailTaken = async (email: string, exceptAccountId: string) =>
     this.rows.some((a) => a.email === email && a.id !== exceptAccountId);
@@ -64,12 +86,19 @@ export class FakeAccounts implements AccountRepository {
 export class FakeSessions implements SessionRepository {
   sessions: (Session & { revokeReason?: string })[] = [];
   tokens: { id: string; sessionId: string; tokenHash: string; usedAt: Date | null }[] = [];
-  create = async (input: { accountId: string; deviceName: string | null; userAgent: string | null; expiresAt: Date }) => {
+  create = async (input: {
+    accountId: string;
+    deviceName: string | null;
+    userAgent: string | null;
+    deviceHash?: string | null;
+    expiresAt: Date;
+  }) => {
     const session: Session = {
       id: randomUUID(),
       accountId: input.accountId,
       deviceName: input.deviceName,
       userAgent: input.userAgent,
+      deviceHash: input.deviceHash ?? null,
       createdAt: new Date(),
       lastSeenAt: new Date(0),
       expiresAt: input.expiresAt,
@@ -168,6 +197,38 @@ export class FakeEmail implements EmailProvider {
   sendOtp = async (email: string, code: string, purpose: 'login' | 'verify') =>
     void this.sent.push({ email, code, purpose });
 }
+
+export class FakeTrustedDevices implements TrustedDeviceRepository {
+  rows: { accountId: string; deviceHash: string }[] = [];
+  isTrusted = async (accountId: string, deviceHash: string) =>
+    this.rows.some((r) => r.accountId === accountId && r.deviceHash === deviceHash);
+  trust = async (accountId: string, deviceHash: string) => {
+    if (!(await this.isTrusted(accountId, deviceHash))) this.rows.push({ accountId, deviceHash });
+  };
+  revoke = async (accountId: string, deviceHash: string) => {
+    this.rows = this.rows.filter((r) => !(r.accountId === accountId && r.deviceHash === deviceHash));
+  };
+  revokeAll = async (accountId: string) => {
+    this.rows = this.rows.filter((r) => r.accountId !== accountId);
+  };
+}
+
+export class FakeEphemeralStore<T> implements EphemeralStore<T> {
+  values = new Map<string, T>();
+  put = async (value: T) => {
+    const id = randomUUID().replace(/-/g, '');
+    this.values.set(id, value);
+    return id;
+  };
+  get = async (id: string) => this.values.get(id) ?? null;
+  delete = async (id: string) => void this.values.delete(id);
+}
+
+/** Readable stand-in for argon2 (tests only). */
+export const fakePasswords: PasswordHasher = {
+  hash: async (password) => `hashed:${password}`,
+  verify: async (hash, password) => hash === `hashed:${password}`,
+};
 
 export const passthroughUow = (repos: AuthRepositories): UnitOfWork<AuthRepositories> => ({
   run: (work) => work(repos),

@@ -1,5 +1,5 @@
 import { RETENTION_OPTIONS, type OwnPersonaDto, type Retention } from '@hellogram/shared';
-import { Avatar, Button, Card, Dialog, DropdownMenu, LabelChip, NumberCode, Switch, TextField, cn } from '@hellogram/ui';
+import { Avatar, Button, Card, Dialog, DropdownMenu, NumberCode, Switch, TextField, cn } from '@hellogram/ui';
 import {
   ArrowLeft,
   Bell,
@@ -18,13 +18,16 @@ import {
   Play,
   Share2,
   Trash2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router';
 import { t } from '../../../i18n/t.js';
 import { PinSettingsRow } from '../../pin/components/PinSettingsRow.js';
 import { DeleteNumberDialog } from '../components/DeleteNumberDialog.js';
-import { labelOf, useAvatar, useNumber, usePauseResume, useShare, useUpdateNumber } from '../model/queries.js';
+import { useAvatar, useNumber, usePauseResume, useShare, useUpdateNumber } from '../model/queries.js';
+import { LabelEditor, type LabelValue } from '../components/LabelPicker.js';
+import { NumberLabel } from '../components/NumberLabel.js';
 
 /** "Until I turn it off" for DND. */
 const DND_FOREVER = '2099-12-31T00:00:00.000Z';
@@ -82,6 +85,7 @@ function NumberDetail({ number }: { number: OwnPersonaDto }) {
   const { copied, copy } = useCopy();
   const fileRef = useRef<HTMLInputElement>(null);
   const [editingName, setEditingName] = useState(false);
+  const [labelDraft, setLabelDraft] = useState<LabelValue | null>(null);
   const [name, setName] = useState(number.displayName);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -167,7 +171,36 @@ function NumberDetail({ number }: { number: OwnPersonaDto }) {
           }}
         />
         {avatar.error && <p className="mt-2 text-xs text-danger">{avatar.error.message}</p>}
-        <LabelChip kind={number.labelKind} text={labelOf(number)} className="mt-3" />
+        <button
+          type="button"
+          onClick={() => setLabelDraft({ labelName: number.labelName, labelIcon: number.labelIcon })}
+          aria-label={t('numbers.editLabel')}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-full hover:opacity-80"
+        >
+          <NumberLabel of={number} />
+          <Pencil className="size-3 text-primary" aria-hidden />
+        </button>
+        <Dialog open={labelDraft !== null} onOpenChange={(open) => !open && setLabelDraft(null)} title={t('numbers.editLabel')}>
+          {labelDraft && (
+            <form
+              className="mt-2 flex flex-col gap-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!labelDraft.labelName.trim()) return;
+                update.mutate(
+                  { labelName: labelDraft.labelName.trim(), labelIcon: labelDraft.labelIcon },
+                  { onSuccess: () => setLabelDraft(null) },
+                );
+              }}
+            >
+              <LabelEditor value={labelDraft} onChange={setLabelDraft} />
+              {update.error && <p className="text-sm text-danger">{update.error.message}</p>}
+              <Button type="submit" variant="gradient" disabled={!labelDraft.labelName.trim() || update.isPending}>
+                {t('common.save')}
+              </Button>
+            </form>
+          )}
+        </Dialog>
         <div className="mt-2 flex items-center gap-1.5">
           <h1 className="text-xl font-bold">{number.displayName}</h1>
           <button
@@ -247,6 +280,12 @@ function NumberDetail({ number }: { number: OwnPersonaDto }) {
             label={t('numbers.allowCalls')}
             checked={number.allowCalls}
             onChange={(v) => update.mutate({ allowCalls: v })}
+          />
+          <ToggleRow
+            icon={<ImageIcon className="size-5" aria-hidden />}
+            label={t('numbers.allowMedia')}
+            checked={number.allowMedia}
+            onChange={(v) => update.mutate({ allowMedia: v })}
           />
           <ToggleRow
             icon={<MessageCircleQuestion className="size-5" aria-hidden />}

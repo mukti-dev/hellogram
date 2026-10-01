@@ -6,14 +6,15 @@ export interface NoticeLogger {
 }
 
 /**
- * Firebase Phone Auth mode: Google sends the verification SMS from the device, so the
- * server never sends OTPs. Transactional notices are logged (and go out as push/email).
+ * When codes are sent by someone else (Firebase Phone Auth from the device, or Message Central,
+ * which makes and checks its own codes), this server never sends OTP texts itself.
+ * Transactional notices are logged (and go out as push/email).
  */
 export class NoSmsProvider implements SmsProvider {
   constructor(private readonly logger: NoticeLogger) {}
 
   async sendOtp(): Promise<void> {
-    throw new DomainError(ErrorCode.SERVICE_UNAVAILABLE, 'Verification codes are sent by Firebase in this app');
+    throw new DomainError(ErrorCode.SERVICE_UNAVAILABLE, 'Verification codes are sent by the verification service in this app');
   }
 
   async sendNotice(phone: string, notice: string): Promise<void> {

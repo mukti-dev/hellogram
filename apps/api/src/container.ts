@@ -4,6 +4,7 @@ import {
   BillingService,
   BlockService,
   CallService,
+  AttachmentService,
   ChatService,
   ComplianceService,
   HealthService,
@@ -19,17 +20,20 @@ import {
   type RequestTxRepos,
 } from '@hellogram/application';
 import { createPrismaClient } from '@hellogram/db';
-import { systemClock, type AuthRepositories, type PhoneIdentityVerifier } from '@hellogram/domain';
+import { systemClock, type AuthRepositories, type BlobStore, type HostedSmsVerification, type PendingDeviceLogin, type PendingSignup, type PhoneIdentityVerifier } from '@hellogram/domain';
 import {
   ConsoleEmailProvider,
   ConsoleSmsProvider,
+  Argon2PasswordHasher,
   Argon2PinHasher,
   DevBillingProvider,
   FirebaseIdTokenVerifier,
   NoSmsProvider,
   NotificationQueue,
   PrismaAccountLifecycleRepository,
+  PrismaAttachmentRepository,
   PrismaAuditRepository,
+  createAttachmentStorage,
   PrismaBillingRepository,
   PrismaGrievanceRepository,
   PrismaPushSubscriptionRepository,
@@ -40,10 +44,15 @@ import {
   RedisCallLock,
   JoseAccessTokenIssuer,
   Msg91SmsProvider,
+  Fast2SmsProvider,
+  MessageCentralVerification,
+  TwoFactorVerification,
   SmtpEmailProvider,
   TurnstileVerifier,
   PrismaPinRepository,
+  RedisEphemeralStore,
   RedisUnlockTokenStore,
+  PrismaTrustedDeviceRepository,
   LocalDiskStorage,
   PrismaBlockRepository,
   PrismaConversationRepository,
@@ -84,6 +93,7 @@ export interface AppContainer {
   requestService: RequestService;
   blockService: BlockService;
   chatService: ChatService;
+  attachmentService: AttachmentService;
   safetyService: SafetyService;
   pinService: PinService;
   callService: CallService;
@@ -94,6 +104,10 @@ export interface AppContainer {
   vapidPublicKey?: string | undefined;
   billingDevTools: boolean;
   phoneAuthProvider: 'otp' | 'firebase';
+  /** How codes reach the phone; the web app warns about a possible call for 'call_or_sms'. */
+  otpDelivery: 'sms' | 'call_or_sms';
+  /** The Terms/Privacy version sign-up must accept. */
+  consentVersion: string;
   complianceService: ComplianceService;
   grievanceOfficer: { name: string; email: string };
   maintenanceService: MaintenanceService;
@@ -111,11 +125,16 @@ const authRepos = (db: Db): AuthRepositories => ({
   accounts: new PrismaAccountRepository(db),
   sessions: new PrismaSessionRepository(db),
   otps: new PrismaOtpChallengeRepository(db),
+  trustedDevices: new PrismaTrustedDeviceRepository(db),
 });
 
 export interface ContainerOverrides {
   /** Tests: stand-in for Firebase token verification. */
   phoneVerifier?: PhoneIdentityVerifier;
+  /** Tests: stand-in for S3. */
+  blobs?: BlobStore;
+  /** Tests: stand-in for Message Central. */
+  hostedSms?: HostedSmsVerification;
 }
 
 export function createContainer(env: ApiEnv, logger: Logger, overrides: ContainerOverrides = {}): AppContainer {
@@ -135,14 +154,37 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
           otpTemplateId: env.MSG91_OTP_TEMPLATE_ID ?? '',
           noticeTemplateId: env.MSG91_NOTICE_TEMPLATE_ID ?? '',
         })
-      : env.SMS_PROVIDER === 'none'
+      : env.SMS_PROVIDER === 'fast2sms'
+        ? new Fast2SmsProvider(
+            { apiKey: env.FAST2SMS_API_KEY ?? '', route: env.FAST2SMS_ROUTE, otpTemplateId: env.FAST2SMS_OTP_TEMPLATE_ID },
+            logger.child({ component: 'fast2sms' }),
+          )
+      : env.SMS_PROVIDER === 'none' || env.SMS_PROVIDER === 'messagecentral' || env.SMS_PROVIDER === 'twofactor'
         ? new NoSmsProvider(providerLog)
         : new ConsoleSmsProvider(providerLog);
+  const hosted =
+    overrides.hostedSms ??
+    (env.SMS_PROVIDER === 'twofactor'
+      ? new TwoFactorVerification(
+          { apiKey: env.TWOFACTOR_API_KEY ?? '', templateName: env.TWOFACTOR_OTP_TEMPLATE },
+          logger.child({ component: 'twofactor' }),
+        )
+      : env.SMS_PROVIDER === 'messagecentral'
+        ? new MessageCentralVerification(
+          {
+            customerId: env.MESSAGECENTRAL_CUSTOMER_ID ?? '',
+            authToken: env.MESSAGECENTRAL_AUTH_TOKEN,
+            password: env.MESSAGECENTRAL_PASSWORD,
+            email: env.MESSAGECENTRAL_EMAIL,
+          },
+          logger.child({ component: 'messagecentral' }),
+        )
+        : null);
   const email = env.EMAIL_PROVIDER === 'smtp' ? new SmtpEmailProvider(env.SMTP_URL ?? '', env.EMAIL_FROM) : new ConsoleEmailProvider(providerLog);
 
   const repos = authRepos(prisma);
   if (env.OTP_BYPASS) logger.warn('OTP_BYPASS is ON — any 6-digit code is accepted (testing only)');
-  const otp = new OtpVerifier(repos.otps, crypto, clock, { bypass: env.OTP_BYPASS });
+  const otp = new OtpVerifier(repos.otps, crypto, clock, { bypass: env.OTP_BYPASS, sms, hosted });
   const proofs = new PhoneProofChecker({
     otp,
     firebase:
@@ -152,12 +194,26 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
   });
 
   const authService = new AuthService(
-    { repos, uow: new PrismaUnitOfWork(prisma, authRepos), otp, sms, email, crypto, tokens, limiter, clock, events, proofs },
-    { consentVersion: env.CONSENT_VERSION, sessionTtlDays: env.SESSION_TTL_DAYS },
+    {
+      repos,
+      uow: new PrismaUnitOfWork(prisma, authRepos),
+      otp,
+      proofs,
+      passwords: new Argon2PasswordHasher(),
+      pendingSignups: new RedisEphemeralStore<PendingSignup>(redis, 'signup'),
+      deviceLogins: new RedisEphemeralStore<PendingDeviceLogin>(redis, 'device-login'),
+      crypto,
+      tokens,
+      limiter,
+      clock,
+      events,
+    },
+    { consentVersion: env.CONSENT_VERSION, sessionTtlDays: env.SESSION_TTL_DAYS, phoneAuth: env.PHONE_AUTH_PROVIDER },
   );
   const accountService = new AccountService({
     accounts: repos.accounts,
     sessions: repos.sessions,
+    trustedDevices: repos.trustedDevices,
     otp,
     email,
     crypto,
@@ -179,12 +235,27 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
   });
 
   const reach = new PrismaReachRepository(prisma);
+  const conversations = new PrismaConversationRepository(prisma);
+  const attachments = new PrismaAttachmentRepository(prisma);
+  const attachmentStorage = createAttachmentStorage(env);
+  const blobs = overrides.blobs ?? attachmentStorage.blobs;
   const chatService = new ChatService({
-    conversations: new PrismaConversationRepository(prisma),
+    conversations,
+    attachments,
+    blobs,
     personas,
     reach,
     events,
     clock,
+    limiter,
+  });
+  const attachmentService = new AttachmentService({
+    attachments,
+    blobs,
+    cipher: attachmentStorage.cipher,
+    conversations,
+    chat: chatService,
+    crypto,
     limiter,
   });
   const blockService = new BlockService({
@@ -285,7 +356,7 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     clock,
   });
 
-  const maintenanceService = new MaintenanceService({ repo: new PrismaMaintenanceRepository(prisma), clock });
+  const maintenanceService = new MaintenanceService({ repo: new PrismaMaintenanceRepository(prisma), attachments, blobs, clock });
 
   const healthService = new HealthService(
     [new PostgresHealthProbe(prisma), new RedisHealthProbe(redis)],
@@ -302,6 +373,7 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     requestService,
     blockService,
     chatService,
+    attachmentService,
     safetyService,
     pinService,
     callService,
@@ -313,6 +385,9 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     billingDevTools: env.BILLING_PROVIDER === 'dev' && env.NODE_ENV !== 'production',
     complianceService,
     phoneAuthProvider: env.PHONE_AUTH_PROVIDER,
+    // 2Factor reads the code out in a voice call when it can't send an SMS.
+    consentVersion: env.CONSENT_VERSION,
+    otpDelivery: env.PHONE_AUTH_PROVIDER === 'otp' && env.SMS_PROVIDER === 'twofactor' ? 'call_or_sms' : 'sms',
     grievanceOfficer: { name: env.GRIEVANCE_OFFICER_NAME, email: env.GRIEVANCE_OFFICER_EMAIL },
     maintenanceService,
     avatarUrl: (key) => personaService.avatarUrl(key),

@@ -125,7 +125,7 @@ export function registerRealtimeEvents(
       caller: p.calleeLocked
         ? null
         : { id: p.caller.id, code: p.caller.code, displayName: p.caller.displayName, avatarUrl: avatarUrl(p.caller.avatarKey) },
-      to: { personaId: p.callee.id, code: p.callee.code, labelKind: p.callee.labelKind, labelText: p.callee.labelText },
+      to: { personaId: p.callee.id, code: p.callee.code, labelIcon: p.callee.labelIcon, labelName: p.callee.labelName },
     });
   });
 

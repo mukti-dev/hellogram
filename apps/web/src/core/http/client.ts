@@ -63,10 +63,10 @@ export function configureExtraHeaders(fn: () => Record<string, string>): void {
   extraHeaders = fn;
 }
 
-export async function api<T>(
+async function request(
   path: string,
   { method = 'GET', body, rawBody, contentType, auth = true, headers = {} }: RequestOptions = {},
-): Promise<T> {
+): Promise<Response> {
   const send = (token: string | null) =>
     fetch(path, {
       method,
@@ -99,5 +99,18 @@ export async function api<T>(
   }
 
   if (!res.ok) throw await ApiError.fromResponse(res);
+  return res;
+}
+
+export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await request(path, options);
   return (res.status === 204 ? undefined : await res.json()) as T;
+}
+
+/**
+ * Binary download with the access token in a header. Chat files are fetched this way
+ * (never as a plain <img src> or link), so no credential ever appears in a URL.
+ */
+export async function apiBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  return (await request(path, options)).blob();
 }

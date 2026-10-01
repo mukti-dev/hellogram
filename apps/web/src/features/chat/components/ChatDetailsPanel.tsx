@@ -1,12 +1,13 @@
 import { RETENTION_OPTIONS, type ConversationDto, type Retention } from '@hellogram/shared';
-import { Avatar, Button, Dialog, LabelChip, Switch, TextField, cn } from '@hellogram/ui';
+import { Avatar, Button, Dialog, Switch, TextField, cn } from '@hellogram/ui';
 import { Bell, Pencil, Phone, Trash2, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { t } from '../../../i18n/t.js';
-import { labelName } from '../../../shared/format.js';
+
 import { SafetyRows } from '../../safety/components/SafetyRows.js';
 import { useClearChat, useUpdateConversation } from '../model/queries.js';
 import { chatTitle } from './ConversationRow.js';
+import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 const MUTE_FOREVER = '2099-12-31T00:00:00.000Z';
 
@@ -81,7 +82,7 @@ export function ChatDetailsPanel({
             {c.counterpart.code && <span className="font-mono"> · {c.counterpart.code}</span>}
           </p>
         )}
-        <LabelChip kind={c.me.labelKind} text={labelName(c.me)} prefix={t('chat.via')} className="mt-2" />
+        <NumberLabel of={c.me} prefix={t('chat.via')} className="mt-2" />
 
         {onCall && !c.unavailable && !c.counterpart.masked && (
           <div className="mt-4 grid w-full grid-cols-1 gap-2">

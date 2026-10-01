@@ -2,7 +2,18 @@ import type { AuthService, LoginResult } from '@hellogram/application';
 import type { ClientInfo } from '@hellogram/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
-import type { firebaseLoginBody, sendEmailOtpBody, sendPhoneOtpBody, verifyEmailOtpBody, verifyPhoneOtpBody } from './auth.schemas.js';
+import { toProof } from '../shared-proof.js';
+import type {
+  forgotPasswordBody,
+  loginBody,
+  loginResendBody,
+  loginVerifyBody,
+  resetPasswordBody,
+  signupBody,
+  signupResendBody,
+  signupVerifyBody,
+} from './auth.schemas.js';
+import { readDeviceCookie, setDeviceCookie } from './device-cookie.js';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie, type CookieSettings } from './refresh-cookie.js';
 
 type Req<TBody> = FastifyRequest<{ Body: TBody }>;
@@ -19,29 +30,58 @@ export class AuthController {
     private readonly cookie: CookieSettings,
   ) {}
 
-  sendPhoneOtp = async (request: Req<z.infer<typeof sendPhoneOtpBody>>, reply: FastifyReply) => {
-    await this.auth.sendPhoneOtp(request.body.phone, clientInfo(request));
+  signup = async (request: Req<z.infer<typeof signupBody>>) => {
+    const { turnstileToken: _t, ...input } = request.body;
+    return this.auth.startSignup(input, clientInfo(request));
+  };
+
+  signupResend = async (request: Req<z.infer<typeof signupResendBody>>, reply: FastifyReply) => {
+    await this.auth.resendSignupCode(request.body.signupId, clientInfo(request));
     return reply.status(204).send();
   };
 
-  verifyPhoneOtp = async (request: Req<z.infer<typeof verifyPhoneOtpBody>>, reply: FastifyReply) => {
-    const { deviceName, ...input } = request.body;
-    return this.login(reply, await this.auth.verifyPhoneOtp(input, clientInfo(request, deviceName)));
+  signupVerify = async (request: Req<z.infer<typeof signupVerifyBody>>, reply: FastifyReply) => {
+    const result = await this.auth.completeSignup(
+      { signupId: request.body.signupId, proof: toProof(request.body), deviceId: readDeviceCookie(request) },
+      clientInfo(request, request.body.deviceName),
+    );
+    return this.signedIn(reply, result);
   };
 
-  verifyFirebase = async (request: Req<z.infer<typeof firebaseLoginBody>>, reply: FastifyReply) => {
-    const { deviceName, ...input } = request.body;
-    return this.login(reply, await this.auth.verifyFirebaseLogin(input, clientInfo(request, deviceName)));
+  login = async (request: Req<z.infer<typeof loginBody>>, reply: FastifyReply) => {
+    const result = await this.auth.login(
+      { phone: request.body.phone, password: request.body.password, deviceId: readDeviceCookie(request) },
+      clientInfo(request, request.body.deviceName),
+    );
+    if (result.status === 'verify_device') return reply.send({ status: 'verify_device', ticket: result.ticket });
+    this.setCookies(reply, result);
+    return reply.send({ status: 'ok', accessToken: result.accessToken, expiresIn: result.expiresIn });
   };
 
-  sendEmailOtp = async (request: Req<z.infer<typeof sendEmailOtpBody>>, reply: FastifyReply) => {
-    await this.auth.sendEmailLoginOtp(request.body.email, clientInfo(request));
+  loginResend = async (request: Req<z.infer<typeof loginResendBody>>, reply: FastifyReply) => {
+    await this.auth.resendDeviceCode(request.body.ticket, clientInfo(request));
     return reply.status(204).send();
   };
 
-  verifyEmailOtp = async (request: Req<z.infer<typeof verifyEmailOtpBody>>, reply: FastifyReply) => {
-    const { deviceName, ...input } = request.body;
-    return this.login(reply, await this.auth.verifyEmailOtp(input, clientInfo(request, deviceName)));
+  loginVerify = async (request: Req<z.infer<typeof loginVerifyBody>>, reply: FastifyReply) => {
+    const result = await this.auth.verifyDevice(
+      { ticket: request.body.ticket, proof: toProof(request.body), deviceId: readDeviceCookie(request) },
+      clientInfo(request, request.body.deviceName),
+    );
+    return this.signedIn(reply, result);
+  };
+
+  forgotPassword = async (request: Req<z.infer<typeof forgotPasswordBody>>, reply: FastifyReply) => {
+    await this.auth.forgotPassword(request.body.phone, clientInfo(request));
+    return reply.status(204).send();
+  };
+
+  resetPassword = async (request: Req<z.infer<typeof resetPasswordBody>>, reply: FastifyReply) => {
+    const result = await this.auth.resetPassword(
+      { phone: request.body.phone, password: request.body.password, proof: toProof(request.body), deviceId: readDeviceCookie(request) },
+      clientInfo(request, request.body.deviceName),
+    );
+    return this.signedIn(reply, result);
   };
 
   refresh = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -55,18 +95,20 @@ export class AuthController {
     }
   };
 
+  /** Logging out keeps the device remembered: next time the password is enough. */
   logout = async (request: FastifyRequest, reply: FastifyReply) => {
     await this.auth.logout(readRefreshCookie(request));
     clearRefreshCookie(reply, this.cookie);
     return reply.status(204).send();
   };
 
-  private login(reply: FastifyReply, result: LoginResult) {
+  private setCookies(reply: FastifyReply, result: LoginResult) {
     setRefreshCookie(reply, result.refreshToken, this.cookie);
-    return reply.send({
-      accessToken: result.accessToken,
-      expiresIn: result.expiresIn,
-      isNewAccount: result.isNewAccount,
-    });
+    setDeviceCookie(reply, result.deviceId, this.cookie);
+  }
+
+  private signedIn(reply: FastifyReply, result: LoginResult) {
+    this.setCookies(reply, result);
+    return reply.send({ accessToken: result.accessToken, expiresIn: result.expiresIn });
   }
 }

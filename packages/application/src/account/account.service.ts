@@ -1,6 +1,8 @@
 import {
   DomainError,
+  normalizeAccountName,
   normalizeEmail,
+  type Account,
   type AccountRepository,
   type Actor,
   type Clock,
@@ -9,6 +11,7 @@ import {
   type EventPublisher,
   type RateLimiter,
   type SessionRepository,
+  type TrustedDeviceRepository,
   OTP_RULES,
 } from '@hellogram/domain';
 import { ErrorCode } from '@hellogram/shared';
@@ -16,6 +19,11 @@ import type { OtpVerifier } from '../auth/otp-verifier.js';
 
 export interface MeView {
   phone: string;
+  /** Null until set: the app asks for it right after the first sign-in. */
+  name: string | null;
+  /** YYYY-MM-DD; private. */
+  dateOfBirth: string | null;
+  gender: Account['gender'];
   email: string | null;
   emailVerified: boolean;
   createdAt: Date;
@@ -33,6 +41,8 @@ export interface SessionView {
 export interface AccountDeps {
   accounts: AccountRepository;
   sessions: SessionRepository;
+  /** Optional: remote logout also makes that device verify the mobile again. */
+  trustedDevices?: TrustedDeviceRepository;
   otp: OtpVerifier;
   email: EmailProvider;
   crypto: CryptoService;
@@ -50,10 +60,19 @@ export class AccountService {
     if (!account) throw new DomainError(ErrorCode.UNAUTHENTICATED, 'Please log in again');
     return {
       phone: account.phone,
+      name: account.name,
+      dateOfBirth: account.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+      gender: account.gender,
       email: account.emailVerifiedAt ? account.email : null,
       emailVerified: Boolean(account.emailVerifiedAt),
       createdAt: account.createdAt,
     };
+  }
+
+  /** The person's own name. Private: never shown to the people they chat with. */
+  async setName(actor: Actor, input: string): Promise<MeView> {
+    await this.deps.accounts.setName(actor.accountId, normalizeAccountName(input));
+    return this.getMe(actor);
   }
 
   async listSessions(actor: Actor): Promise<SessionView[]> {
@@ -74,6 +93,8 @@ export class AccountService {
       throw new DomainError(ErrorCode.NOT_FOUND, 'Device not found');
     }
     await this.deps.sessions.revoke(session.id, 'remote_logout', this.deps.clock.now());
+    // A device logged out from elsewhere (lost phone…) must verify the mobile again on its next login.
+    if (session.deviceHash) await this.deps.trustedDevices?.revoke(actor.accountId, session.deviceHash);
     await this.deps.events?.publish({ type: 'session.revoked', payload: { sessionId: session.id }, occurredAt: this.deps.clock.now() });
   }
 

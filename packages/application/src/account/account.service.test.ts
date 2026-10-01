@@ -1,7 +1,7 @@
 import { DomainError } from '@hellogram/domain';
 import { describe, expect, it } from 'vitest';
 import { OtpVerifier } from '../auth/otp-verifier.js';
-import { FakeAccounts, FakeClock, FakeEmail, FakeLimiter, FakeOtps, FakeSessions, fakeCrypto } from '../testing/fakes.js';
+import { FakeAccounts, FakeClock, FakeEmail, FakeLimiter, FakeOtps, FakeSessions, FakeTrustedDevices, fakeCrypto } from '../testing/fakes.js';
 import { AccountService } from './account.service.js';
 
 async function setup() {
@@ -9,10 +9,12 @@ async function setup() {
   const accounts = new FakeAccounts();
   const sessions = new FakeSessions();
   const email = new FakeEmail();
+  const trustedDevices = new FakeTrustedDevices();
   const otp = new OtpVerifier(new FakeOtps(), fakeCrypto, clock, { bypass: false });
   const service = new AccountService({
     accounts,
     sessions,
+    trustedDevices,
     otp,
     email,
     crypto: fakeCrypto,
@@ -22,11 +24,18 @@ async function setup() {
   const account = await accounts.create({ phone: '+919876543210', ageConfirmedAt: clock.now(), consentVersion: 'v1' });
   const expiresAt = new Date(clock.now().getTime() + 86_400_000);
   const s1 = await sessions.create({ accountId: account.id, deviceName: 'Laptop', userAgent: null, expiresAt });
-  const s2 = await sessions.create({ accountId: account.id, deviceName: 'Phone', userAgent: null, expiresAt });
-  return { service, accounts, sessions, email, actor: { accountId: account.id, sessionId: s1.id }, s2 };
+  const s2 = await sessions.create({ accountId: account.id, deviceName: 'Phone', userAgent: null, deviceHash: 'phone-device', expiresAt });
+  await trustedDevices.trust(account.id, 'phone-device');
+  return { service, accounts, sessions, trustedDevices, email, actor: { accountId: account.id, sessionId: s1.id }, s2 };
 }
 
 describe('AccountService', () => {
+  it('logging out another device makes that device verify the mobile again', async () => {
+    const { service, trustedDevices, actor, s2 } = await setup();
+    await service.revokeSession(actor, s2.id);
+    expect(await trustedDevices.isTrusted(actor.accountId, 'phone-device')).toBe(false);
+  });
+
   it('returns the caller’s own phone on /me', async () => {
     const { service, actor } = await setup();
     await expect(service.getMe(actor)).resolves.toMatchObject({ phone: '+919876543210', emailVerified: false });

@@ -63,6 +63,7 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
         mine: true,
         type: 'text' as const,
         body: o.body,
+        attachment: null,
         system: null,
         createdAt: o.createdAt,
         deleted: false,
@@ -106,7 +107,7 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
       {conversation.unavailable ? (
         <p className="border-t border-border bg-surface-1 p-4 text-center text-sm text-muted">{t('chat.unavailable')}</p>
       ) : (
-        <Composer conversationId={conversation.id} />
+        <Composer conversationId={conversation.id} mediaAllowed={conversation.mediaAllowed} />
       )}
     </div>
   );

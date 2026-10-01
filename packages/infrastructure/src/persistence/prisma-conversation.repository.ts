@@ -6,6 +6,7 @@ import type {
   ConversationView,
   InboxFilter,
   InboxRow,
+  InsertMessageResult,
   Message,
   NewMessage,
   Page,
@@ -52,6 +53,7 @@ const messageSelect = {
   readAt: true,
   deletedForEveryoneAt: true,
   contentPurgedAt: true,
+  attachment: { select: { id: true, kind: true, mimeType: true, fileName: true, sizeBytes: true, width: true, height: true } },
 } as const;
 
 type MessageRow = Omit<Message, 'systemPayload'> & { systemPayload: Prisma.JsonValue };
@@ -130,7 +132,7 @@ export class PrismaConversationRepository implements ConversationRepository {
         ) lm ON true
         WHERE cm."personaId" = ANY(${filter.personaIds}::uuid[])
           AND cm."hiddenAt" IS NULL
-          AND (${filter.labelKind ?? null}::text IS NULL OR mp."labelKind"::text = ${filter.labelKind ?? null}::text)
+          AND (${filter.label ?? null}::text IS NULL OR lower(mp."labelName") = lower(${filter.label ?? null}::text))
           AND (${q}::text IS NULL OR cm.nickname ILIKE ${q}::text
                OR (NOT cm."counterpartMasked" AND op."displayName" ILIKE ${q}::text))
       ) x
@@ -192,18 +194,30 @@ export class PrismaConversationRepository implements ConversationRepository {
     return { items, nextCursor: rows.length > limit && lastItem ? encodeCursor(lastItem.createdAt, lastItem.id) : null };
   }
 
-  async insertMessage(message: NewMessage): Promise<{ message: Message; created: boolean }> {
+  async insertMessage(message: NewMessage): Promise<InsertMessageResult> {
+    const data: Prisma.MessageUncheckedCreateInput = {
+      conversationId: message.conversationId,
+      senderPersonaId: message.senderPersonaId,
+      clientMessageId: message.clientMessageId,
+      type: message.type,
+      body: message.body,
+      systemPayload: message.systemPayload ?? Prisma.JsonNull,
+      suppressed: message.suppressed,
+    };
+    if (message.attachmentId) {
+      // One statement: the message only exists if the upload is the sender's, from this chat, and unsent.
+      data.attachment = {
+        connect: {
+          id: message.attachmentId,
+          AND: [{ messageId: null }],
+          uploaderPersonaId: message.senderPersonaId,
+          conversationId: message.conversationId,
+        },
+      };
+    }
     try {
       const row = await this.db.message.create({
-        data: {
-          conversationId: message.conversationId,
-          senderPersonaId: message.senderPersonaId,
-          clientMessageId: message.clientMessageId,
-          type: message.type,
-          body: message.body,
-          systemPayload: message.systemPayload ?? Prisma.JsonNull,
-          suppressed: message.suppressed,
-        },
+        data,
         select: messageSelect,
       });
       if (!message.suppressed) {
@@ -223,12 +237,30 @@ export class PrismaConversationRepository implements ConversationRepository {
         });
         if (existing) return { message: toMessage(existing), created: false };
       }
+      if (message.attachmentId && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        return { attachmentRejected: true };
+      }
       throw error;
     }
   }
 
   async findMessage(id: string): Promise<Message | null> {
     const row = await this.db.message.findUnique({ where: { id }, select: messageSelect });
+    return row && toMessage(row);
+  }
+
+  async findVisibleMessage(id: string, personaId: string): Promise<Message | null> {
+    const message = await this.db.message.findUnique({ where: { id }, select: { conversationId: true } });
+    if (!message) return null;
+    const member = await this.db.conversationMember.findUnique({
+      where: { conversationId_personaId: { conversationId: message.conversationId, personaId } },
+      select: { clearedBefore: true },
+    });
+    if (!member) return null;
+    const row = await this.db.message.findFirst({
+      where: { id, AND: [visibleTo(personaId, member.clearedBefore)] },
+      select: messageSelect,
+    });
     return row && toMessage(row);
   }
 

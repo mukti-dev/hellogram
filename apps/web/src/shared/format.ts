@@ -35,5 +35,3 @@ export function dayLabel(iso: string, now = new Date()): string {
   return date.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-export const labelName = (p: { labelKind: string; labelText: string | null }) =>
-  p.labelKind === 'other' ? (p.labelText ?? 'Other') : ({ olx: 'OLX', dating: 'Dating', tenants: 'Tenants' } as Record<string, string>)[p.labelKind]!;

@@ -1,6 +1,6 @@
 import type { ConversationDto, InboxDto, MessagePageDto } from '@hellogram/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { clientId, connectedPair, sendMessage } from './fixtures.js';
+import { clientId, connectedPair, createNumber, sendMessage } from './fixtures.js';
 import { assertNoAccountLeak, createHarness, type Harness, type User } from './harness.js';
 
 let h: Harness;
@@ -19,7 +19,7 @@ describe('inbox', () => {
     const { owner, visitor, visitorNumber, ownerNumber } = await connectedPair(h);
     const [row] = (await inbox(owner)).items;
     expect(row).toMatchObject({
-      me: { id: ownerNumber.id, labelKind: 'olx' },
+      me: { id: ownerNumber.id, labelName: 'OLX', labelIcon: 'shopping-bag' },
       counterpart: { id: visitorNumber.id, code: visitorNumber.code, displayName: 'Amit Kumar', masked: false },
       unread: 1,
       unavailable: false,
@@ -101,7 +101,7 @@ describe('messages, ticks and receipts (rules 17–19)', () => {
     expect((await inbox(owner)).items[0]?.unread).toBe(0);
   });
 
-  it('delete for me hides only on my side; delete for everyone within 60 minutes', async () => {
+  it('delete for me hides only on my side; delete for everyone removes it for both', async () => {
     const { owner, visitor, conversationId } = await connectedPair(h);
     const m1 = await sendMessage(visitor, conversationId, 'oops');
     await owner.request({ method: 'DELETE', url: `/v1/messages/${m1.body.id}?scope=me` });
@@ -110,13 +110,44 @@ describe('messages, ticks and receipts (rules 17–19)', () => {
 
     await visitor.request({ method: 'DELETE', url: `/v1/messages/${m1.body.id}?scope=everyone` });
     expect((await messages(visitor, conversationId)).find((m) => m.id === m1.body.id)).toMatchObject({ deleted: true, body: null });
+  });
 
-    const m2 = await sendMessage(visitor, conversationId, 'old');
-    await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '61 minutes' WHERE id = $1`, [m2.body.id]);
-    const late = await visitor.request<{ error: { code: string } }>({ method: 'DELETE', url: `/v1/messages/${m2.body.id}?scope=everyone` });
-    expect(late.body.error.code).toBe('DELETE_WINDOW_EXPIRED');
-    const notMine = await owner.request<{ error: { code: string } }>({ method: 'DELETE', url: `/v1/messages/${m2.body.id}?scope=everyone` });
-    expect(notMine.status).toBe(403);
+  it('either side can delete any message for everyone, however old', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const theirs = await sendMessage(visitor, conversationId, 'my address is 12 MG Road');
+    await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '40 days' WHERE id = $1`, [theirs.body.id]);
+
+    // An old message of my own…
+    const mine = await sendMessage(owner, conversationId, 'old one');
+    await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '30 days' WHERE id = $1`, [mine.body.id]);
+    expect((await owner.request({ method: 'DELETE', url: `/v1/messages/${mine.body.id}?scope=everyone` })).status).toBe(204);
+    // …and one the other person sent.
+    expect((await owner.request({ method: 'DELETE', url: `/v1/messages/${theirs.body.id}?scope=everyone` })).status).toBe(204);
+
+    for (const user of [owner, visitor]) {
+      const list = await messages(user, conversationId);
+      for (const id of [mine.body.id, theirs.body.id]) expect(list.find((m) => m.id === id)).toMatchObject({ deleted: true, body: null });
+      expect(JSON.stringify(list)).not.toContain('MG Road');
+    }
+    // Deleting again is harmless.
+    expect((await visitor.request({ method: 'DELETE', url: `/v1/messages/${theirs.body.id}?scope=everyone` })).status).toBe(204);
+  });
+
+  it('delete for everyone is limited to people in the chat and to real messages', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const sent = await sendMessage(visitor, conversationId, 'hello');
+    const stranger = await h.signUp();
+    expect((await stranger.request({ method: 'DELETE', url: `/v1/messages/${sent.body.id}?scope=everyone` })).status).toBe(404);
+
+    // System notices (here: a retention change) can't be removed.
+    await owner.request({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'd7' } });
+    const notice = (await messages(owner, conversationId)).find((m) => m.type === 'system')!;
+    expect((await owner.request({ method: 'DELETE', url: `/v1/messages/${notice.id}?scope=everyone` })).status).toBe(403);
+
+    // A blocked sender's message never reached the blocker, so the blocker can't touch it.
+    await owner.request({ method: 'POST', url: `/v1/conversations/${conversationId}/block` });
+    const hidden = await sendMessage(visitor, conversationId, 'are you there?');
+    expect((await owner.request({ method: 'DELETE', url: `/v1/messages/${hidden.body.id}?scope=everyone` })).status).toBe(404);
   });
 });
 
@@ -146,5 +177,22 @@ describe('retention, clear chat and closed chats (rules 7, 21, 23)', () => {
     await owner.request({ method: 'DELETE', url: `/v1/personas/${ownerNumber.id}`, payload: { confirm: 'DELETE' } });
     expect((await inbox(visitor)).items[0]?.unavailable).toBe(true);
     expect((await sendMessage(visitor, conversationId, 'hello?')).body.error?.code).toBe('NUMBER_UNAVAILABLE');
+  });
+});
+
+describe('inbox filters use the user’s own labels', () => {
+  it('filters by label text, case-insensitively', async () => {
+    const { owner, visitor, ownerNumber } = await connectedPair(h);
+    const second = await createNumber(owner, 'Coffee', { labelName: 'Dating', labelIcon: 'heart' });
+    await visitor.request({ method: 'POST', url: '/v1/requests', payload: { fromPersonaId: (await createNumber(visitor, 'Amit 2')).id, toCode: second.code, introMessage: 'hi' } });
+    const reqs = await owner.request<{ items: { id: string }[] }>({ method: 'GET', url: '/v1/requests' });
+    await owner.request({ method: 'POST', url: `/v1/requests/${reqs.body.items[0]!.id}/accept` });
+
+    const all = await owner.request<InboxDto>({ method: 'GET', url: '/v1/conversations' });
+    expect(all.body.items).toHaveLength(2);
+    const dating = await owner.request<InboxDto>({ method: 'GET', url: '/v1/conversations?label=dating' });
+    expect(dating.body.items.map((c) => c.me.labelName)).toEqual(['Dating']);
+    const olx = await owner.request<InboxDto>({ method: 'GET', url: '/v1/conversations?label=OLX' });
+    expect(olx.body.items.map((c) => c.me.id)).toEqual([ownerNumber.id]);
   });
 });

@@ -1,8 +1,9 @@
-import { baseEnvSchema, checkIntegrations, integrationsEnvSchema, loadEnv } from '@hellogram/config';
+import { baseEnvSchema, checkIntegrations, checkStorage, integrationsEnvSchema, loadEnv, storageEnvSchema } from '@hellogram/config';
 import { z } from 'zod';
 
 export const apiEnvSchema = baseEnvSchema
   .extend(integrationsEnvSchema.shape)
+  .extend(storageEnvSchema.shape)
   .extend({
     PORT: z.coerce.number().int().positive().default(4000),
     HOST: z.string().default('0.0.0.0'),
@@ -30,13 +31,27 @@ export const apiEnvSchema = baseEnvSchema
       .default('turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp')
       .transform((v) => v.split(',').map((u) => u.trim()).filter(Boolean)),
     /** "console" logs codes (dev only); production needs real providers. */
-    SMS_PROVIDER: z.enum(['console', 'msg91', 'none']).default('console'),
+    SMS_PROVIDER: z.enum(['console', 'msg91', 'fast2sms', 'messagecentral', 'twofactor', 'none']).default('console'),
     /**
      * "otp": our own SMS codes (via SMS_PROVIDER). "firebase": Firebase Phone Auth sends and checks
      * the SMS on the device; we verify Google's ID token. Needs FIREBASE_PROJECT_ID.
      */
     PHONE_AUTH_PROVIDER: z.enum(['otp', 'firebase']).default('otp'),
     FIREBASE_PROJECT_ID: z.string().optional(),
+    /** 2Factor.in: they make, deliver (SMS or voice call) and check the code (SMS_PROVIDER=twofactor). */
+    TWOFACTOR_API_KEY: z.string().optional(),
+    /** Approved OTP SMS template name in 2Factor; without one 2Factor may send the code by voice call. */
+    TWOFACTOR_OTP_TEMPLATE: z.string().optional(),
+    /** Message Central VerifyNow: they make, send and check the code (SMS_PROVIDER=messagecentral). */
+    MESSAGECENTRAL_CUSTOMER_ID: z.string().optional(),
+    /** The auth token from the Message Central dashboard (or set MESSAGECENTRAL_PASSWORD instead). */
+    MESSAGECENTRAL_AUTH_TOKEN: z.string().optional(),
+    MESSAGECENTRAL_PASSWORD: z.string().optional(),
+    MESSAGECENTRAL_EMAIL: z.email().optional(),
+    FAST2SMS_API_KEY: z.string().optional(),
+    /** "otp" = Fast2SMS's own OTP route (no DLT of ours); "dlt" = our DLT template via FAST2SMS_OTP_TEMPLATE_ID. */
+    FAST2SMS_ROUTE: z.enum(['otp', 'dlt']).default('otp'),
+    FAST2SMS_OTP_TEMPLATE_ID: z.string().optional(),
     MSG91_AUTH_KEY: z.string().optional(),
     MSG91_OTP_TEMPLATE_ID: z.string().optional(),
     MSG91_NOTICE_TEMPLATE_ID: z.string().optional(),
@@ -61,6 +76,7 @@ export const apiEnvSchema = baseEnvSchema
   })
   .superRefine((env, ctx) => {
     checkIntegrations(env, (path, message) => ctx.addIssue({ code: 'custom', path: [path], message }));
+    checkStorage(env, (path, message) => ctx.addIssue({ code: 'custom', path: [path], message }));
     if (env.NODE_ENV === 'production' && env.RATE_LIMIT_MULTIPLIER !== 1) {
       ctx.addIssue({ code: 'custom', path: ['RATE_LIMIT_MULTIPLIER'], message: 'must be 1 in production' });
     }
@@ -69,8 +85,8 @@ export const apiEnvSchema = baseEnvSchema
     }
     if (env.NODE_ENV === 'production') {
       if (env.SMS_PROVIDER === 'console') ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'console logs OTPs — not allowed in production' });
-      if (env.PHONE_AUTH_PROVIDER === 'otp' && env.SMS_PROVIDER !== 'msg91') {
-        ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'must be msg91 when PHONE_AUTH_PROVIDER=otp' });
+      if (env.PHONE_AUTH_PROVIDER === 'otp' && !['msg91', 'fast2sms', 'messagecentral', 'twofactor'].includes(env.SMS_PROVIDER)) {
+        ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'must be twofactor, messagecentral, msg91 or fast2sms when PHONE_AUTH_PROVIDER=otp' });
       }
       if (env.EMAIL_PROVIDER !== 'smtp') ctx.addIssue({ code: 'custom', path: ['EMAIL_PROVIDER'], message: 'must be smtp in production' });
       if (!env.TURNSTILE_SECRET) ctx.addIssue({ code: 'custom', path: ['TURNSTILE_SECRET'], message: 'required in production' });
@@ -78,6 +94,18 @@ export const apiEnvSchema = baseEnvSchema
     }
     if (env.SMS_PROVIDER === 'msg91' && !(env.MSG91_AUTH_KEY && env.MSG91_OTP_TEMPLATE_ID && env.MSG91_NOTICE_TEMPLATE_ID)) {
       ctx.addIssue({ code: 'custom', path: ['MSG91_AUTH_KEY'], message: 'MSG91 key and template ids are required' });
+    }
+    if (env.SMS_PROVIDER === 'twofactor' && !env.TWOFACTOR_API_KEY) {
+      ctx.addIssue({ code: 'custom', path: ['TWOFACTOR_API_KEY'], message: 'required when SMS_PROVIDER=twofactor' });
+    }
+    if (env.SMS_PROVIDER === 'messagecentral' && !(env.MESSAGECENTRAL_CUSTOMER_ID && (env.MESSAGECENTRAL_AUTH_TOKEN || env.MESSAGECENTRAL_PASSWORD))) {
+      ctx.addIssue({ code: 'custom', path: ['MESSAGECENTRAL_CUSTOMER_ID'], message: 'customer id and an auth token (or password) are required when SMS_PROVIDER=messagecentral' });
+    }
+    if (env.SMS_PROVIDER === 'fast2sms' && !env.FAST2SMS_API_KEY) {
+      ctx.addIssue({ code: 'custom', path: ['FAST2SMS_API_KEY'], message: 'required when SMS_PROVIDER=fast2sms' });
+    }
+    if (env.SMS_PROVIDER === 'fast2sms' && env.FAST2SMS_ROUTE === 'dlt' && !env.FAST2SMS_OTP_TEMPLATE_ID) {
+      ctx.addIssue({ code: 'custom', path: ['FAST2SMS_OTP_TEMPLATE_ID'], message: 'required when FAST2SMS_ROUTE=dlt' });
     }
     if (env.PHONE_AUTH_PROVIDER === 'firebase' && !env.FIREBASE_PROJECT_ID) {
       ctx.addIssue({ code: 'custom', path: ['FIREBASE_PROJECT_ID'], message: 'required when PHONE_AUTH_PROVIDER=firebase' });

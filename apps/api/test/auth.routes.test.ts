@@ -21,61 +21,92 @@ const refreshCookie = (res: LightMyRequestResponse) => {
   return cookie?.value ?? '';
 };
 
+const PASSWORD = 'Sunrise!42';
+const details = {
+  name: 'Mukti Prasad',
+  phone: PHONE,
+  dateOfBirth: '1995-05-10',
+  gender: 'male',
+  password: PASSWORD,
+  termsAccepted: true,
+  consentVersion: TEST_CONSENT,
+};
+const cookieOf = (res: LightMyRequestResponse, name: string) => res.cookies.find((c) => c.name === name);
+
+/** Sign-up with the (bypass) code; this device becomes trusted. */
 const signUp = async (code = '123456') => {
-  const res = await post('/v1/auth/otp/verify', {
-    phone: PHONE,
-    code,
-    ageConfirmed: true,
-    consentVersion: TEST_CONSENT,
-    deviceName: 'Chrome on macOS',
-  });
+  const start = await post('/v1/auth/signup', details);
+  expect(start.statusCode).toBe(200);
+  const res = await post('/v1/auth/signup/verify', { signupId: start.json().signupId, code, deviceName: 'Chrome on macOS' });
   expect(res.statusCode).toBe(200);
-  return { accessToken: res.json().accessToken as string, refresh: refreshCookie(res), res };
+  return { accessToken: res.json().accessToken as string, refresh: refreshCookie(res), device: cookieOf(res, 'hg_dev')!.value, res };
 };
 
-describe('POST /v1/auth/otp/*', () => {
-  it('sign-up: send → verify requires 18+ consent → session with httpOnly refresh cookie', async () => {
+/** Password login from a device that hasn't verified the mobile yet. */
+const loginNewDevice = async (deviceName = 'Phone') => {
+  const res = await post('/v1/auth/login', { phone: PHONE, password: PASSWORD, deviceName });
+  expect(res.json()).toMatchObject({ status: 'verify_device' });
+  const verified = await post('/v1/auth/login/verify', { ticket: res.json().ticket, code: '123456', deviceName });
+  expect(verified.statusCode).toBe(200);
+  return { accessToken: verified.json().accessToken as string };
+};
+
+describe('sign-up and login', () => {
+  it('sign-up: details → code to the mobile → session with httpOnly refresh and device cookies', async () => {
     const { sms } = await setup();
-    expect((await post('/v1/auth/otp/send', { phone: PHONE })).statusCode).toBe(204);
+    const start = await post('/v1/auth/signup', details);
+    expect(start.statusCode).toBe(200);
     expect(sms.sent).toHaveLength(1);
 
-    const noConsent = await post('/v1/auth/otp/verify', { phone: PHONE, code: sms.sent[0]!.code });
-    expect(noConsent.statusCode).toBe(400);
-    expect(noConsent.json().error).toMatchObject({
-      code: 'AGE_CONFIRMATION_REQUIRED',
-      details: { consentVersion: TEST_CONSENT },
-    });
-
-    const { res } = await signUp(sms.sent[0]!.code);
-    expect(res.json()).toMatchObject({ isNewAccount: true, expiresIn: 900 });
-    expect(res.json()).not.toHaveProperty('refreshToken');
-    const cookie = res.cookies.find((c) => c.name === 'hg_rt');
-    expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Strict', path: '/v1/auth' });
-  });
-
-  it('rejects invalid phone numbers with VALIDATION_FAILED', async () => {
-    await setup();
-    const res = await post('/v1/auth/otp/send', { phone: '1234567890' });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('VALIDATION_FAILED');
-  });
-
-  it('rejects a wrong code', async () => {
-    await setup();
-    await post('/v1/auth/otp/send', { phone: PHONE });
-    const res = await post('/v1/auth/otp/verify', {
-      phone: PHONE,
-      code: '000000',
-      ageConfirmed: true,
-      consentVersion: TEST_CONSENT,
-    });
-    expect(res.json().error.code).toBe('OTP_INVALID');
-  });
-
-  it('OTP bypass: any 6-digit code logs in', async () => {
-    await setup({ bypass: true });
-    const { res } = await signUp('424242');
+    const res = await post('/v1/auth/signup/verify', { signupId: start.json().signupId, code: sms.sent[0]!.code });
     expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ expiresIn: 900 });
+    expect(res.json()).not.toHaveProperty('refreshToken');
+    expect(cookieOf(res, 'hg_rt')).toMatchObject({ httpOnly: true, sameSite: 'Strict', path: '/v1/auth' });
+    expect(cookieOf(res, 'hg_dev')).toMatchObject({ httpOnly: true, sameSite: 'Strict', path: '/v1/auth' });
+  });
+
+  it('refuses under-18s and bad input with clear errors', async () => {
+    await setup();
+    const young = await post('/v1/auth/signup', { ...details, dateOfBirth: '2012-04-01' });
+    expect(young.statusCode).toBe(422);
+    expect(young.json().error.code).toBe('UNDER_AGE');
+    const badPhone = await post('/v1/auth/signup', { ...details, phone: '1234567890' });
+    expect(badPhone.json().error.code).toBe('VALIDATION_FAILED');
+    const noTerms = await post('/v1/auth/signup', { ...details, termsAccepted: false });
+    expect(noTerms.statusCode).toBe(400);
+  });
+
+  it('login: same device needs only the password; a new device verifies the mobile once', async () => {
+    const { sms } = await setup({ bypass: true });
+    const { device } = await signUp();
+    sms.sent.length = 0;
+
+    const sameDevice = await post('/v1/auth/login', { phone: PHONE, password: PASSWORD }, { cookie: `hg_dev=${device}` });
+    expect(sameDevice.json()).toMatchObject({ status: 'ok', expiresIn: 900 });
+    expect(sms.sent).toHaveLength(0);
+
+    const newDevice = await post('/v1/auth/login', { phone: PHONE, password: PASSWORD });
+    expect(newDevice.json()).toMatchObject({ status: 'verify_device' });
+    expect(newDevice.json()).not.toHaveProperty('accessToken');
+    expect(sms.sent).toHaveLength(1);
+  });
+
+  it('wrong password: 400 with one generic message (no 401, no SMS)', async () => {
+    const { sms } = await setup({ bypass: true });
+    await signUp();
+    sms.sent.length = 0;
+    const res = await post('/v1/auth/login', { phone: PHONE, password: 'not-the-password' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatchObject({ code: 'INVALID_CREDENTIALS', message: 'Mobile number or password is incorrect' });
+    expect(sms.sent).toHaveLength(0);
+  });
+
+  it('the old code-only login endpoints are gone', async () => {
+    await setup({ bypass: true });
+    for (const url of ['/v1/auth/otp/send', '/v1/auth/otp/verify', '/v1/auth/email/otp/send', '/v1/auth/email/otp/verify', '/v1/auth/firebase']) {
+      expect((await post(url, { phone: PHONE, code: '123456' })).statusCode).toBe(404);
+    }
   });
 });
 
@@ -93,7 +124,14 @@ describe('/v1/me and sessions', () => {
     const auth = { authorization: `Bearer ${accessToken}` };
 
     const me = await app.inject({ method: 'GET', url: '/v1/me', headers: auth });
-    expect(me.json()).toMatchObject({ phone: '+919876543210', email: null, emailVerified: false });
+    expect(me.json()).toMatchObject({
+      phone: '+919876543210',
+      name: 'Mukti Prasad',
+      dateOfBirth: '1995-05-10',
+      gender: 'male',
+      email: null,
+      emailVerified: false,
+    });
 
     const sessions = await app.inject({ method: 'GET', url: '/v1/me/sessions', headers: auth });
     expect(sessions.json().items).toEqual([expect.objectContaining({ deviceName: 'Chrome on macOS', current: true })]);
@@ -102,7 +140,7 @@ describe('/v1/me and sessions', () => {
   it('remote logout kills the other device immediately (rule 3)', async () => {
     await setup({ bypass: true });
     const laptop = await signUp();
-    const phone = await signUp();
+    const phone = await loginNewDevice();
     const sessions = await app.inject({
       method: 'GET',
       url: '/v1/me/sessions',

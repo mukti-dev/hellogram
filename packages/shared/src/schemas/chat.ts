@@ -1,12 +1,25 @@
 import { z } from 'zod';
 import { LIMITS } from '../constants.js';
-import { labelKindSchema, retentionSchema } from './personas.js';
+import { labelIconSchema, retentionSchema } from './personas.js';
 import { ownPersonaBriefSchema } from './requests.js';
 
 export const systemEventSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('retention_changed'), byMe: z.boolean(), value: retentionSchema }),
   z.object({ kind: z.literal('number_unavailable') }),
 ]);
+
+/** A file or image on a message. The bytes are only ever served by `GET /v1/attachments/:id`. */
+export const attachmentSchema = z.object({
+  id: z.uuid(),
+  kind: z.enum(['image', 'file']),
+  fileName: z.string(),
+  mimeType: z.string(),
+  size: z.number().int(),
+  /** Pixels, images only (lets the chat reserve space before the image loads). */
+  width: z.number().int().nullable(),
+  height: z.number().int().nullable(),
+});
+export type AttachmentDto = z.infer<typeof attachmentSchema>;
 
 export const messageSchema = z.object({
   id: z.uuid(),
@@ -16,6 +29,8 @@ export const messageSchema = z.object({
   mine: z.boolean(),
   type: z.enum(['text', 'system']),
   body: z.string().nullable(),
+  /** Null once the message is deleted or its content has expired. */
+  attachment: attachmentSchema.nullable(),
   system: systemEventSchema.nullable(),
   createdAt: z.string(),
   deleted: z.boolean(),
@@ -44,6 +59,8 @@ export const conversationSchema = z.object({
   unavailable: z.boolean(),
   retention: retentionSchema,
   mutedUntil: z.string().nullable(),
+  /** Photos and files are allowed only when both numbers allow them. */
+  mediaAllowed: z.boolean(),
   unread: z.number().int(),
   lastMessage: messageSchema.nullable(),
   lastActivityAt: z.string(),
@@ -53,8 +70,8 @@ export type ConversationDto = z.infer<typeof conversationSchema>;
 export const lockedNumberRowSchema = z.object({
   personaId: z.uuid(),
   displayName: z.string(),
-  labelKind: labelKindSchema,
-  labelText: z.string().nullable(),
+  labelIcon: labelIconSchema,
+  labelName: z.string(),
 });
 export type LockedNumberRowDto = z.infer<typeof lockedNumberRowSchema>;
 
@@ -68,10 +85,15 @@ export type InboxDto = z.infer<typeof inboxSchema>;
 export const messagePageSchema = z.object({ items: z.array(messageSchema), nextCursor: z.string().nullable() });
 export type MessagePageDto = z.infer<typeof messagePageSchema>;
 
-export const sendMessageBody = z.object({
-  clientMessageId: z.string().min(8).max(64),
-  body: z.string().min(1).max(LIMITS.MESSAGE_MAX + 100),
-});
+export const sendMessageBody = z
+  .object({
+    clientMessageId: z.string().min(8).max(64),
+    /** Text, or the caption when there's an attachment. */
+    body: z.string().max(LIMITS.MESSAGE_MAX + 100).optional(),
+    /** From `POST /v1/conversations/:id/attachments`. */
+    attachmentId: z.uuid().optional(),
+  })
+  .refine((v) => Boolean(v.body?.trim()) || Boolean(v.attachmentId), { message: 'Message can’t be empty', path: ['body'] });
 export type SendMessageBody = z.infer<typeof sendMessageBody>;
 
 export const updateConversationBody = z

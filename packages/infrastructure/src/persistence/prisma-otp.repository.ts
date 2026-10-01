@@ -9,6 +9,7 @@ export class PrismaOtpChallengeRepository implements OtpChallengeRepository {
     targetHash: string;
     purpose: OtpPurpose;
     codeHash: string;
+    providerRef?: string | null;
     expiresAt: Date;
     ipHash: string;
   }): Promise<void> {
@@ -25,6 +26,7 @@ export class PrismaOtpChallengeRepository implements OtpChallengeRepository {
         targetHash: true,
         purpose: true,
         codeHash: true,
+        providerRef: true,
         attempts: true,
         expiresAt: true,
         consumedAt: true,

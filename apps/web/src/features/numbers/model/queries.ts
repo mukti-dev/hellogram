@@ -76,5 +76,3 @@ export function useCreateNumber() {
   });
 }
 
-export const labelOf = (p: Pick<OwnPersonaDto, 'labelKind' | 'labelText'>) =>
-  p.labelKind === 'other' ? (p.labelText ?? 'Other') : undefined;

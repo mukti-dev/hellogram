@@ -1,6 +1,7 @@
-import { ErrorCode, LIMITS, type LabelKind, type Retention } from '@hellogram/shared';
+import { ErrorCode, LIMITS, type Retention } from '@hellogram/shared';
 import { DomainError } from '../errors/domain-error.js';
 import type { Persona } from '../personas/persona.js';
+import type { MessageAttachment } from './attachments.js';
 
 export type MessageType = 'text' | 'system';
 export type MessageStatus = 'sent' | 'delivered' | 'read';
@@ -12,6 +13,7 @@ export interface Message {
   clientMessageId: string;
   type: MessageType;
   body: string | null;
+  attachment: MessageAttachment | null;
   systemPayload: SystemPayload | null;
   suppressed: boolean;
   createdAt: Date;
@@ -61,7 +63,8 @@ export interface InboxRow extends ConversationView {
 
 export interface InboxFilter {
   personaIds: string[];
-  labelKind?: LabelKind | undefined;
+  /** One of the user's own labels (case-insensitive). */
+  label?: string | undefined;
   unreadOnly?: boolean | undefined;
   query?: string | undefined;
   cursor?: string | null | undefined;
@@ -77,6 +80,20 @@ export function normalizeMessageBody(input: string): string {
   return body;
 }
 
+/** A caption is optional, but follows the same rules as a message when present. */
+export function normalizeCaption(input: string | undefined): string | null {
+  const caption = (input ?? '').replace(/\r\n/g, '\n').trim();
+  if (!caption) return null;
+  if (caption.length > LIMITS.ATTACHMENT_CAPTION_MAX) {
+    throw new DomainError(ErrorCode.MESSAGE_TOO_LONG, 'Captions can be up to 1,000 characters');
+  }
+  return caption;
+}
+
+/** True while a message's text and file may still be shown. */
+export const hasContent = (m: Pick<Message, 'deletedForEveryoneAt' | 'contentPurgedAt'>) =>
+  !m.deletedForEveryoneAt && !m.contentPurgedAt;
+
 export function normalizeNickname(input: string | null): string | null {
   if (input === null) return null;
   // Strip control characters; keep emoji.
@@ -88,14 +105,13 @@ export function normalizeNickname(input: string | null): string | null {
   return clean;
 }
 
-/** Rule 19: delete for everyone — sender only, within 60 minutes. */
-export function assertCanDeleteForEveryone(message: Message, actorPersonaId: string, now: Date): void {
-  if (message.senderPersonaId !== actorPersonaId || message.type !== 'text') {
-    throw new DomainError(ErrorCode.FORBIDDEN, 'You can only delete your own messages for everyone');
-  }
-  if (now.getTime() - message.createdAt.getTime() > LIMITS.DELETE_FOR_EVERYONE_WINDOW_MIN * 60_000) {
-    throw new DomainError(ErrorCode.DELETE_WINDOW_EXPIRED, 'Messages can be deleted for everyone within 60 minutes');
-  }
+/**
+ * Delete for everyone: either person in the chat can remove any message, their own or the other
+ * person's, at any time. (Replaces the original rule 19: sender only, within 60 minutes.)
+ * System notices (e.g. "disappearing messages turned on") stay.
+ */
+export function assertCanDeleteForEveryone(message: Pick<Message, 'type'>): void {
+  if (message.type !== 'text') throw new DomainError(ErrorCode.FORBIDDEN, 'This message can’t be deleted');
 }
 
 /** Tick shown to the sender. Suppressed (blocked) messages stay at one tick forever. */
@@ -113,6 +129,10 @@ export const RETENTION_MS: Record<Retention, number | null> = {
   d7: 7 * 24 * HOUR,
   h24: 24 * HOUR,
 };
+
+/** Photos and files are allowed in a chat only when both numbers allow them. */
+export const mediaAllowed = (view: Pick<ConversationView, 'myPersona' | 'otherPersona'>) =>
+  view.myPersona.allowMedia && view.otherPersona.allowMedia;
 
 /** True when the conversation is gone for this member (retired number, deleted account). */
 export const isClosed = (view: Pick<ConversationView, 'conversation' | 'otherPersona'>) =>

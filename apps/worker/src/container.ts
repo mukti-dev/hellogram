@@ -17,7 +17,9 @@ import {
   CoturnCredentialIssuer,
   PrismaAccountLifecycleRepository,
   PrismaAccountRepository,
+  PrismaAttachmentRepository,
   PrismaAuditRepository,
+  createAttachmentStorage,
   PrismaGrievanceRepository,
   PrismaOtpChallengeRepository,
   DevBillingProvider,
@@ -49,7 +51,9 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
   const personas = new PrismaPersonaRepository(prisma);
   const conversations = new PrismaConversationRepository(prisma);
   const reach = new PrismaReachRepository(prisma);
-  const chat = new ChatService({ conversations, personas, reach, events, clock, limiter });
+  const attachments = new PrismaAttachmentRepository(prisma);
+  const { blobs } = createAttachmentStorage(env);
+  const chat = new ChatService({ conversations, attachments, blobs, personas, reach, events, clock, limiter });
   const calls = new CallService({
     calls: new PrismaCallRepository(prisma),
     personas,
@@ -96,7 +100,7 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
         : null,
   });
   const triggers = new PushTriggers({ personas, conversations, clock });
-  const maintenance = new MaintenanceService({ repo: new PrismaMaintenanceRepository(prisma), clock });
+  const maintenance = new MaintenanceService({ repo: new PrismaMaintenanceRepository(prisma), attachments, blobs, clock });
   const crypto = new NodeCryptoService('worker-unused-secret-0123456789abcdef');
   const quiet = { info: () => undefined };
   // Only applyDuePhoneChanges runs in the worker.

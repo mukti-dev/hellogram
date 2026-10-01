@@ -146,7 +146,6 @@ export class ComplianceService {
     if (!(await this.deps.limiter.hit(`otp:send:${targetHash}`, OTP_RULES.sendLimit, OTP_RULES.sendWindowSeconds))) {
       throw new DomainError(ErrorCode.RATE_LIMITED, 'Too many codes requested. Try again later.');
     }
-    const code = await this.deps.otp.issue({ channel: 'sms', targetHash, purpose, ipHash: this.deps.crypto.hmac('ip', ip) });
-    await this.deps.sms.sendOtp(phone, code);
+    await this.deps.otp.sendSms(phone, { targetHash, purpose, ipHash: this.deps.crypto.hmac('ip', ip) });
   }
 }

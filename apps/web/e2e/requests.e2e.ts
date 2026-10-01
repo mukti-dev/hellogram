@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createNumberViaUi, randomMobile, signUpViaUi } from './helpers.js';
+import { createNumberViaUi, fillSignup, randomMobile, signUpViaUi } from './helpers.js';
 
 test('stranger opens link → sends request → owner accepts', async ({ browser }) => {
   const ownerCtx = await browser.newContext();
@@ -14,13 +14,16 @@ test('stranger opens link → sends request → owner accepts', async ({ browser
   await visitor.goto(`/${code.toLowerCase()}`);
   await expect(visitor).toHaveURL(new RegExp(`/${code}$`));
   await expect(visitor.getByRole('heading', { name: 'Rahul Deals' })).toBeVisible();
-  await visitor.getByLabel('Mobile number').fill(randomMobile());
   await visitor.getByLabel('Intro message (optional)').fill('Is the laptop still available?');
-  await visitor.getByRole('button', { name: 'Send OTP' }).click();
+
+  // Not signed up yet: sign up from the link, then land back on it with the intro kept.
+  await visitor.getByRole('button', { name: 'Sign up to send a request' }).click();
+  await fillSignup(visitor, randomMobile(), 'Amit');
   await visitor.getByLabel('Digit 1 of 6').pressSequentially('135790');
-  await visitor.getByLabel('I am 18 years or older').check();
-  await visitor.getByLabel(/I agree to the Terms of Service/).check();
-  await visitor.getByRole('button', { name: 'Create my account' }).click();
+  await expect(visitor).toHaveURL(new RegExp(`/${code}$`));
+  await expect(visitor.getByLabel('Intro message (optional)')).toHaveValue('Is the laptop still available?');
+  await visitor.getByRole('button', { name: 'Send request' }).click();
+  await visitor.getByLabel('Label', { exact: true }).fill('Buying');
   await visitor.getByLabel('Your name on Hellogram').fill('Amit Kumar');
   await visitor.getByRole('button', { name: 'Send request' }).click();
   await expect(visitor.getByText('Request sent')).toBeVisible();

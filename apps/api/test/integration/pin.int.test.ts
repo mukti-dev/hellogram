@@ -1,7 +1,7 @@
 import type { InboxDto, MessagePageDto, PersonaListDto } from '@hellogram/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectedPair, sendMessage } from './fixtures.js';
-import { createHarness, type Harness, type User } from './harness.js';
+import { createHarness, type Harness } from './harness.js';
 
 let h: Harness;
 beforeAll(async () => {
@@ -10,37 +10,9 @@ beforeAll(async () => {
 afterAll(async () => h.close());
 beforeEach(async () => h.reset());
 
-// With OTP_BYPASS off here, sign-up codes come from the dev SMS log.
-async function signUp(): Promise<User> {
-  const phone = `9${Math.floor(100_000_000 + Math.random() * 899_999_999)}`;
-  await h.app.inject({ method: 'POST', url: '/v1/auth/otp/send', payload: { phone } });
-  const code = h.devOtps.at(-1)!;
-  const res = await h.app.inject({
-    method: 'POST',
-    url: '/v1/auth/otp/verify',
-    payload: { phone, code, ageConfirmed: true, consentVersion: 'test-v1' },
-  });
-  const token = res.json().accessToken as string;
-  const headers = { authorization: `Bearer ${token}` };
-  return {
-    token,
-    refresh: '',
-    headers,
-    async request(opts) {
-      const r = await h.app.inject({ ...opts, headers: { ...headers, ...opts.headers } } as never);
-      let body: unknown = r.body;
-      try {
-        body = r.json();
-      } catch {
-        /* empty */
-      }
-      return { status: r.statusCode, body: body as never, headers: r.headers };
-    },
-  };
-}
+// With OTP_BYPASS off here, the harness reads sign-up codes from the dev SMS log.
 
 async function lockedPair() {
-  h.signUp = signUp;
   const pair = await connectedPair(h);
   const set = await pair.owner.request<{ unlockToken: string }>({
     method: 'PUT',
@@ -87,16 +59,11 @@ describe('number lock (rules 24–25)', () => {
     });
     // Same account, second device (new session via refresh-less login isn't possible here, so forge a session by logging in again).
     const phoneRow = await h.db.query(`SELECT phone FROM accounts a JOIN personas p ON p."accountId" = a.id WHERE p.id = $1`, [ownerNumber.id]);
-    await h.app.inject({ method: 'POST', url: '/v1/auth/otp/send', payload: { phone: phoneRow.rows[0].phone } });
-    const second = await h.app.inject({
-      method: 'POST',
-      url: '/v1/auth/otp/verify',
-      payload: { phone: phoneRow.rows[0].phone, code: h.devOtps.at(-1) },
-    });
+    const second = await h.signUp(phoneRow.rows[0].phone.slice(3)); // existing number: logs in from a new device
     const res = await h.app.inject({
       method: 'GET',
       url: `/v1/conversations/${conversationId}/messages`,
-      headers: { authorization: `Bearer ${second.json().accessToken}`, 'x-persona-unlock': unlock.body.unlockToken },
+      headers: { ...second.headers, 'x-persona-unlock': unlock.body.unlockToken },
     });
     expect(res.json().error.code).toBe('PERSONA_LOCKED');
   });

@@ -1,7 +1,6 @@
 import {
   conversationSchema,
   inboxSchema,
-  labelKindSchema,
   messagePageSchema,
   messageSchema,
   sendMessageBody,
@@ -25,7 +24,7 @@ export const chatRoutes =
         schema: {
           querystring: z.object({
             personaId: z.uuid().optional(),
-            label: labelKindSchema.optional(),
+            label: z.string().trim().min(1).max(20).optional(),
             unread: z.stringbool().optional(),
             q: z.string().max(60).optional(),
             cursor: z.string().max(200).optional(),

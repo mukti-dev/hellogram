@@ -20,6 +20,8 @@ import { billingRoutes, billingWebhookRoute } from './modules/billing/billing.ro
 import { blockRoutes } from './modules/blocks/block.routes.js';
 import { pushRoutes } from './modules/push/push.routes.js';
 import { callRoutes } from './modules/calls/call.routes.js';
+import { AttachmentController } from './modules/attachments/attachment.controller.js';
+import { attachmentRoutes } from './modules/attachments/attachment.routes.js';
 import { ChatController } from './modules/chat/chat.controller.js';
 import { complianceRoutes, grievanceRoutes } from './modules/compliance/compliance.routes.js';
 import { chatRoutes } from './modules/chat/chat.routes.js';
@@ -81,13 +83,14 @@ export async function buildApp({ container, corsOrigins, logger }: BuildAppOptio
   await app.register(
     async (v1) => {
       v1.get('/', async () => ({ name: 'hellogram-api', version: 'v1' }));
-      await v1.register(authRoutes(new AuthController(container.authService, container.cookie), container.phoneAuthProvider));
+      await v1.register(authRoutes(new AuthController(container.authService, container.cookie), container.phoneAuthProvider, container.otpDelivery, container.consentVersion));
       await v1.register(meRoutes(new MeController(container.accountService)));
       await v1.register(personaRoutes(new PersonaController(container.personaService)));
       await v1.register(publicRoutes(container.requestService, container.avatarUrl));
       await v1.register(requestRoutes(new RequestController(container.requestService, container.avatarUrl)));
       await v1.register(blockRoutes(container.blockService));
       await v1.register(chatRoutes(new ChatController(container.chatService, container.avatarUrl)));
+      await v1.register(attachmentRoutes(new AttachmentController(container.attachmentService)));
       await v1.register(safetyRoutes(container.safetyService));
       await v1.register(pinRoutes(container.pinService));
       await v1.register(callRoutes(container.callService, container.avatarUrl));

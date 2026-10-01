@@ -8,8 +8,8 @@ import { callsApi } from '../api/calls.api.js';
 export interface CallParty {
   name: string;
   avatarUrl: string | null;
-  labelKind: string;
-  labelText: string | null;
+  labelIcon: string;
+  labelName: string | null;
   /** Their code (outgoing) or mine (incoming "to A482719K"). */
   code: string | null;
 }

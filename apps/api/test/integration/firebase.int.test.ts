@@ -2,7 +2,7 @@ import { FirebaseIdTokenVerifier } from '@hellogram/infrastructure';
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from 'jose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createNumber } from './fixtures.js';
-import { createHarness, type Harness } from './harness.js';
+import { TEST_PASSWORD, TEST_SIGNUP, createHarness, type Harness } from './harness.js';
 
 /**
  * Firebase Phone Auth. Google's signing keys are replaced by a local key pair so we can
@@ -34,46 +34,46 @@ const firebaseToken = (phone: string, authSecondsAgo = 5) =>
     .setExpirationTime('1h')
     .sign(privateKey);
 
-const login = async (idToken: string, consent = true) =>
-  h.app.inject({
-    method: 'POST',
-    url: '/v1/auth/firebase',
-    payload: { idToken, ...(consent ? { ageConfirmed: true, consentVersion: 'test-v1' } : {}) },
-  });
+const post = (url: string, payload: object, headers: Record<string, string> = {}) =>
+  h.app.inject({ method: 'POST', url, payload, headers });
+
+/** Sign-up details, then the Firebase proof of the mobile in place of our own code. */
+const signUpWith = async (phone: string, idToken: string) => {
+  const start = await post('/v1/auth/signup', { ...TEST_SIGNUP, phone });
+  expect(start.statusCode).toBe(200);
+  return post('/v1/auth/signup/verify', { signupId: start.json().signupId, idToken });
+};
+const login = async (phone: string) => signUpWith(phone, await firebaseToken(phone));
 
 describe('Firebase Phone Auth', () => {
   it('reports the mode to the web app', async () => {
-    expect((await h.app.inject({ method: 'GET', url: '/v1/auth/config' })).json()).toEqual({ phoneAuth: 'firebase' });
+    expect((await h.app.inject({ method: 'GET', url: '/v1/auth/config' })).json()).toEqual({ phoneAuth: 'firebase', otpDelivery: 'sms', consentVersion: 'test-v1' });
   });
 
-  it('signs up with a Firebase token: 18+ consent, then a normal session', async () => {
-    const token = await firebaseToken('+919876543210');
-    const noConsent = await login(token, false);
-    expect(noConsent.json().error.code).toBe('AGE_CONFIRMATION_REQUIRED');
-
-    const res = await login(token);
+  it('signs up with a Firebase proof of the mobile; the server sends no SMS', async () => {
+    const res = await login('+919876543210');
     expect(res.statusCode).toBe(200);
-    expect(res.json().isNewAccount).toBe(true);
+    expect(h.devOtps).toHaveLength(0);
     const me = await h.app.inject({ method: 'GET', url: '/v1/me', headers: { authorization: `Bearer ${res.json().accessToken}` } });
     expect(me.json().phone).toBe('+919876543210');
-
-    // Same number again → same account.
-    expect((await login(await firebaseToken('+919876543210'))).json().isNewAccount).toBe(false);
   });
 
-  it('rejects stale verifications, foreign numbers and garbage', async () => {
-    expect((await login(await firebaseToken('+919876543210', 15 * 60))).json().error.code).toBe('OTP_EXPIRED');
-    expect((await login(await firebaseToken('+14155550100'))).json().error.code).toBe('VALIDATION_FAILED');
-    expect((await login('x'.repeat(40))).json().error.code).toBe('OTP_INVALID');
+  it('a new device proves the mobile with Firebase too', async () => {
+    await login('+919876543210');
+    const fresh = await post('/v1/auth/login', { phone: '9876543210', password: TEST_PASSWORD });
+    expect(fresh.json().status).toBe('verify_device');
+    const ok = await post('/v1/auth/login/verify', { ticket: fresh.json().ticket, idToken: await firebaseToken('+919876543210') });
+    expect(ok.statusCode).toBe(200);
   });
 
-  it('server-side OTP sending is off (Google sends the SMS)', async () => {
-    const res = await h.app.inject({ method: 'POST', url: '/v1/auth/otp/send', payload: { phone: '9876543210' } });
-    expect(res.statusCode).toBe(503);
+  it('rejects stale verifications, proofs for another number, and garbage', async () => {
+    expect((await signUpWith('+919876543210', await firebaseToken('+919876543210', 15 * 60))).json().error.code).toBe('OTP_EXPIRED');
+    expect((await signUpWith('+919876543210', await firebaseToken('+919811111111'))).json().error.code).toBe('OTP_INVALID');
+    expect((await signUpWith('+919876543210', 'x'.repeat(40))).json().error.code).toBe('OTP_INVALID');
   });
 
   it('PIN reset needs a fresh Firebase proof of *this account’s* phone', async () => {
-    const res = await login(await firebaseToken('+919811100000'));
+    const res = await login('+919811100000');
     const headers = { authorization: `Bearer ${res.json().accessToken}` };
     const user = {
       token: res.json().accessToken,

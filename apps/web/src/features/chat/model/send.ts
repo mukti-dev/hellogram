@@ -1,7 +1,9 @@
 import type { MessageDto } from '@hellogram/shared';
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../../core/http/api-error.js';
+import { t } from '../../../i18n/t.js';
 import { chatApi } from '../api/chat.api.js';
+import { prepareFile, seedAttachment, tooLarge } from './attachments.js';
 import { upsertMessage } from './cache.js';
 import { newClientMessageId, useOutbox, type OutboxItem } from './outbox.js';
 
@@ -38,6 +40,25 @@ export function useSendMessage(conversationId: string) {
       };
       useOutbox.getState().add(item);
       await deliver(client, item);
+    },
+  });
+}
+
+/**
+ * Sends a file (with an optional caption). Needs a connection: files aren't queued offline.
+ * Throws an Error with a user-facing message.
+ */
+export function useSendAttachment(conversationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file, caption }: { file: File; caption: string }) => {
+      const prepared = await prepareFile(file);
+      if (tooLarge(prepared)) throw new Error(t('chat.fileTooLarge'));
+      const attachment = await chatApi.uploadAttachment(conversationId, prepared, file.name);
+      const message = await chatApi.send(conversationId, newClientMessageId(), caption.trim() || undefined, attachment.id);
+      seedAttachment(attachment.id, prepared);
+      upsertMessage(client, message);
+      void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });
     },
   });
 }

@@ -8,8 +8,8 @@ export function useStartCall(): ((conversation: ConversationDto) => void) | unde
     void start(c.id, {
       name: c.nickname ?? c.counterpart.displayName,
       avatarUrl: c.counterpart.avatarUrl,
-      labelKind: c.me.labelKind,
-      labelText: c.me.labelText,
+      labelIcon: c.me.labelIcon,
+      labelName: c.me.labelName,
       code: c.counterpart.code,
     });
 }

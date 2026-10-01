@@ -98,7 +98,7 @@ describe('grievances (IT Rules 2021)', () => {
 describe('deleted numbers stay deleted', () => {
   it('a re-registered phone starts fresh', async () => {
     const user = await h.signUp('9855555555');
-    await user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: 'Old', labelKind: 'olx', allowCalls: true } });
+    await user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: 'Old', labelName: 'OLX', labelIcon: 'shopping-bag', allowCalls: true } });
     await user.request({ method: 'POST', url: '/v1/me/delete/otp' });
     await user.request({ method: 'DELETE', url: '/v1/me', payload: { code: '123456', confirm: 'DELETE' } });
     const again = await h.signUp('9855555555');

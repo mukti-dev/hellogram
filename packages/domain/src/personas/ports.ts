@@ -1,23 +1,25 @@
-import type { LabelKind, Retention } from '@hellogram/shared';
+import type { LabelIcon, Retention } from '@hellogram/shared';
 import type { PauseReason, Persona } from './persona.js';
 
 export interface CreatePersonaInput {
   accountId: string;
   code: string;
   displayName: string;
-  labelKind: LabelKind;
-  labelText: string | null;
+  labelIcon: LabelIcon;
+  labelName: string;
   allowCalls: boolean;
+  allowMedia: boolean;
   isPaid: boolean;
 }
 
 export interface PersonaSettingsPatch {
   displayName?: string;
   avatarKey?: string | null;
-  labelKind?: LabelKind;
-  labelText?: string | null;
+  labelIcon?: LabelIcon;
+  labelName?: string;
   acceptRequests?: boolean;
   allowCalls?: boolean;
+  allowMedia?: boolean;
   readReceipts?: boolean;
   dndUntil?: Date | null;
   defaultRetention?: Retention;

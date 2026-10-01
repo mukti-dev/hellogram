@@ -42,9 +42,11 @@ describe('persona fields', () => {
     expect(() => normalizeDisplayName('x'.repeat(41))).toThrow(DomainError);
   });
 
-  it('keeps custom text only for "other" labels (≤ 16 chars)', () => {
-    expect(normalizeLabel('olx', 'ignored')).toEqual({ labelKind: 'olx', labelText: null });
-    expect(normalizeLabel('other', 'Freelance')).toEqual({ labelKind: 'other', labelText: 'Freelance' });
-    expect(() => normalizeLabel('other', 'x'.repeat(17))).toThrow(DomainError);
+  it('labels are the user’s own words (1–20 characters) with an icon from the set', () => {
+    expect(normalizeLabel('  Flat   hunting ', 'home')).toEqual({ labelName: 'Flat hunting', labelIcon: 'home' });
+    expect(normalizeLabel('OLX', 'shopping-bag')).toEqual({ labelName: 'OLX', labelIcon: 'shopping-bag' });
+    expect(() => normalizeLabel('   ', 'tag')).toThrow(DomainError);
+    expect(() => normalizeLabel('x'.repeat(21), 'tag')).toThrow(DomainError);
+    expect(() => normalizeLabel('Work', 'not-an-icon')).toThrow(DomainError);
   });
 });

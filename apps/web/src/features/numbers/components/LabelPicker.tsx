@@ -1,30 +1,62 @@
-import type { LabelKind } from '@hellogram/shared';
-import { cn } from '@hellogram/ui';
+import { LABEL_ICONS, LIMITS, type LabelIcon } from '@hellogram/shared';
+import { TextField, cn } from '@hellogram/ui';
 import { t } from '../../../i18n/t.js';
+import { LABEL_ICON_SET, NumberLabel, iconName } from './NumberLabel.js';
 
-const OPTIONS: { kind: LabelKind; text: string; tone: string }[] = [
-  { kind: 'olx', text: 'OLX', tone: 'data-[on=true]:border-label-olx data-[on=true]:bg-label-olx/15 text-label-olx' },
-  { kind: 'dating', text: 'Dating', tone: 'data-[on=true]:border-label-dating data-[on=true]:bg-label-dating/15 text-label-dating' },
-  { kind: 'tenants', text: 'Tenants', tone: 'data-[on=true]:border-label-tenants data-[on=true]:bg-label-tenants/15 text-label-tenants' },
-  { kind: 'other', text: 'Other', tone: 'data-[on=true]:border-muted data-[on=true]:bg-surface-3 text-fg' },
-];
+/** Examples only — there are no preset labels. */
+const EXAMPLES = ['OLX', 'Dating', 'Tenants', 'Freelance', 'Car sale'];
 
-export function LabelPicker({ value, onChange }: { value: LabelKind; onChange: (kind: LabelKind) => void }) {
+export interface LabelValue {
+  labelName: string;
+  labelIcon: LabelIcon;
+}
+
+/** The user's own label text plus an icon, with a live preview of the chip. */
+export function LabelEditor({ value, onChange }: { value: LabelValue; onChange: (value: LabelValue) => void }) {
   return (
-    <div role="radiogroup" aria-label={t('numbers.label')} className="flex flex-wrap gap-2">
-      {OPTIONS.map((o) => (
-        <button
-          key={o.kind}
-          type="button"
-          role="radio"
-          aria-checked={value === o.kind}
-          data-on={value === o.kind}
-          onClick={() => onChange(o.kind)}
-          className={cn('h-10 rounded-md border border-border px-4 text-sm font-semibold transition hover:bg-surface-2', o.tone)}
-        >
-          {o.text}
-        </button>
-      ))}
+    <div className="flex flex-col gap-4">
+      <TextField
+        label={t('numbers.label')}
+        placeholder={t('numbers.labelPlaceholder')}
+        hint={t('numbers.labelHint', { examples: EXAMPLES.join(', ') })}
+        maxLength={LIMITS.LABEL_NAME_MAX}
+        value={value.labelName}
+        onChange={(e) => onChange({ ...value, labelName: e.target.value })}
+        required
+      />
+
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium">{t('numbers.icon')}</legend>
+        <div role="radiogroup" aria-label={t('numbers.icon')} className="grid grid-cols-5 gap-2 sm:grid-cols-10">
+          {LABEL_ICONS.map((icon) => {
+            const { Icon } = LABEL_ICON_SET[icon];
+            const selected = value.labelIcon === icon;
+            return (
+              <button
+                key={icon}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={iconName(icon)}
+                title={iconName(icon)}
+                onClick={() => onChange({ ...value, labelIcon: icon })}
+                className={cn(
+                  'inline-flex aspect-square items-center justify-center rounded-md border transition',
+                  selected ? 'border-primary bg-primary-soft text-primary' : 'border-border text-muted hover:bg-surface-2 hover:text-fg',
+                )}
+              >
+                <Icon className="size-5" aria-hidden />
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      {value.labelName.trim() && (
+        <p className="flex items-center gap-2 text-xs text-muted">
+          {t('numbers.labelPreview')} <NumberLabel of={{ labelIcon: value.labelIcon, labelName: value.labelName.trim() }} />
+        </p>
+      )}
     </div>
   );
 }

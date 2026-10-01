@@ -51,6 +51,13 @@ export class AdminService {
     return { id, totpSecret, otpauthUrl: this.deps.totp.otpauthUrl(totpSecret, email) };
   }
 
+  /** CLI: the enrolment link for an existing admin, to show as a QR code again (new phone, first setup). */
+  async enrolment(email: string) {
+    const admin = await this.deps.admins.findAdminByEmail(email);
+    if (!admin) throw new DomainError(ErrorCode.NOT_FOUND, 'No admin with that email');
+    return { otpauthUrl: this.deps.totp.otpauthUrl(admin.totpSecret, admin.email) };
+  }
+
   async me(actor: AdminActor) {
     const admin = await this.deps.admins.findAdmin(actor.adminId);
     if (!admin || admin.disabledAt) throw new DomainError(ErrorCode.UNAUTHENTICATED, 'Please log in');

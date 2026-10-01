@@ -96,13 +96,7 @@ export class PinService {
     const targetHash = this.resetTarget(account.phone, persona.id);
     const allowed = await this.deps.limiter.hit(`otp:send:${targetHash}`, OTP_RULES.sendLimit, OTP_RULES.sendWindowSeconds);
     if (!allowed) throw new DomainError(ErrorCode.RATE_LIMITED, 'Too many codes requested. Try again later.');
-    const code = await this.deps.otp.issue({
-      channel: 'sms',
-      targetHash,
-      purpose: 'pin_reset',
-      ipHash: this.deps.crypto.hmac('ip', ip),
-    });
-    await this.deps.sms.sendOtp(account.phone, code);
+    await this.deps.otp.sendSms(account.phone, { targetHash, purpose: 'pin_reset', ipHash: this.deps.crypto.hmac('ip', ip) });
   }
 
   /**

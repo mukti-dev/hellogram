@@ -52,7 +52,7 @@ export class PhoneProofChecker {
     }
 
     if (!opts.expectedPhone) throw new DomainError(ErrorCode.VALIDATION_FAILED, 'Phone number required');
-    const challenge = await this.deps.otp.check(opts.otpTargetHash(opts.expectedPhone), opts.purpose, proof.code);
+    const challenge = await this.deps.otp.check(opts.otpTargetHash(opts.expectedPhone), opts.purpose, proof.code, opts.expectedPhone);
     return {
       phone: opts.expectedPhone,
       consume: async () => {

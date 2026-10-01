@@ -13,7 +13,7 @@ async function number(user: User, name: string, extra: Record<string, unknown> =
   const res = await user.request<OwnPersonaDto>({
     method: 'POST',
     url: '/v1/personas',
-    payload: { displayName: name, labelKind: 'olx', allowCalls: true, ...extra },
+    payload: { displayName: name, labelName: 'OLX', labelIcon: 'shopping-bag', allowCalls: true, ...extra },
   });
   if (res.status !== 201) throw new Error(JSON.stringify(res.body));
   return res.body;
@@ -59,7 +59,7 @@ describe('contact requests (rules 10–13)', () => {
     const [req] = await incoming(owner);
     expect(req).toMatchObject({
       from: { id: amit.id, code: amit.code, displayName: 'Amit Kumar', avatarUrl: null },
-      to: { id: rahul.id, labelKind: 'olx' },
+      to: { id: rahul.id, labelName: 'OLX', labelIcon: 'shopping-bag' },
       introMessage: 'Is this still available?',
     });
     expect(Object.keys(req!.from).sort()).toEqual(['avatarUrl', 'code', 'displayName', 'id']);

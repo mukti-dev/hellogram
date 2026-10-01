@@ -1,3 +1,4 @@
+import type { LabelIcon } from '@hellogram/shared';
 import { LIMITS } from '@hellogram/shared';
 
 export type SubscriptionStatus = 'created' | 'authenticated' | 'active' | 'past_due' | 'grace' | 'cancelled' | 'completed';
@@ -63,9 +64,10 @@ export interface BillingRepository {
   createDraft(input: {
     accountId: string;
     displayName: string;
-    labelKind: string;
-    labelText: string | null;
+    labelIcon: string;
+    labelName: string;
     allowCalls: boolean;
+    allowMedia: boolean;
     providerRef: string;
     expiresAt: Date;
   }): Promise<{ id: string }>;
@@ -85,7 +87,8 @@ export interface DraftRow {
   id: string;
   accountId: string;
   displayName: string;
-  labelKind: 'olx' | 'dating' | 'tenants' | 'other';
-  labelText: string | null;
+  labelIcon: LabelIcon;
+  labelName: string;
   allowCalls: boolean;
+  allowMedia: boolean;
 }

@@ -4,9 +4,13 @@ import {
   evaluateMessage,
   isClosed,
   isReadable,
+  mediaAllowed,
+  normalizeCaption,
   normalizeMessageBody,
   normalizeNickname,
   type Actor,
+  type AttachmentRepository,
+  type BlobStore,
   type Clock,
   type ConversationRepository,
   type ConversationView,
@@ -19,10 +23,13 @@ import {
   type RateLimiter,
   type ReachRepository,
 } from '@hellogram/domain';
-import { ErrorCode, type LabelKind, type Retention } from '@hellogram/shared';
+import { ErrorCode, type Retention } from '@hellogram/shared';
+import { discardAttachment } from './attachment.service.js';
 
 export interface ChatDeps {
   conversations: ConversationRepository;
+  attachments: AttachmentRepository;
+  blobs: BlobStore;
   personas: PersonaRepository;
   reach: ReachRepository;
   events: EventPublisher;
@@ -35,7 +42,7 @@ const MESSAGES_PER_MINUTE = 30;
 
 export interface InboxQuery {
   personaId?: string | undefined;
-  labelKind?: LabelKind | undefined;
+  label?: string | undefined;
   unreadOnly?: boolean | undefined;
   query?: string | undefined;
   cursor?: string | null | undefined;
@@ -57,7 +64,7 @@ export class ChatService {
     const readable = mine.filter((p) => isReadable(p, actor.unlockedPersonaIds));
     const page = await this.deps.conversations.listInbox({
       personaIds: readable.map((p) => p.id),
-      labelKind: query.labelKind,
+      label: query.label,
       unreadOnly: query.unreadOnly,
       query: query.query,
       cursor: query.cursor,
@@ -95,9 +102,14 @@ export class ChatService {
     return this.deps.conversations.listMessages(conversationId, view.myPersona.id, cursor ?? null, 50);
   }
 
-  async send(actor: Actor, conversationId: string, input: { clientMessageId: string; body: string }): Promise<Message> {
+  async send(
+    actor: Actor,
+    conversationId: string,
+    input: { clientMessageId: string; body?: string | undefined; attachmentId?: string | undefined },
+  ): Promise<Message> {
     const view = await this.view(actor, conversationId);
-    const body = normalizeMessageBody(input.body);
+    // With a file, the text is an optional caption.
+    const body = input.attachmentId ? normalizeCaption(input.body) : normalizeMessageBody(input.body ?? '');
     if (!(await this.deps.limiter.hit(`msg:${view.myPersona.id}`, MESSAGES_PER_MINUTE, 60))) {
       throw new DomainError(ErrorCode.RATE_LIMITED, 'You’re sending messages too fast. Wait a moment.');
     }
@@ -108,16 +120,21 @@ export class ChatService {
     const decision = evaluateMessage({ now, ...snapshot }, { closed: isClosed(view) });
     if (decision.kind === 'reject') throw new DomainError(decision.code, decision.message);
 
-    const { message, created } = await this.deps.conversations.insertMessage({
+    if (input.attachmentId && !mediaAllowed(view)) throw mediaOff();
+    const result = await this.deps.conversations.insertMessage({
       conversationId,
       senderPersonaId: view.myPersona.id,
       clientMessageId: input.clientMessageId,
       body,
       type: 'text',
       suppressed: decision.kind === 'suppress',
+      attachmentId: input.attachmentId ?? null,
     });
-    if (created) await this.publishNew(view, message);
-    return message;
+    if ('attachmentRejected' in result) {
+      throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This file is no longer available. Attach it again.');
+    }
+    if (result.created) await this.publishNew(view, result.message);
+    return result.message;
   }
 
   /** Recipient device confirms receipt (✓✓). Works across all the actor's numbers. */
@@ -170,8 +187,14 @@ export class ChatService {
       });
       return;
     }
-    assertCanDeleteForEveryone(message, view.myPersona.id, now);
+    assertCanDeleteForEveryone(message);
+    if (message.deletedForEveryoneAt) return;
     await this.deps.conversations.deleteForEveryone(message.id, now);
+    // The file goes now, not at the next sweep (the worker is only the backstop if storage is down).
+    if (message.attachment) {
+      const attachment = await this.deps.attachments.findById(message.attachment.id);
+      if (attachment) await discardAttachment(this.deps, attachment).catch(() => undefined);
+    }
     await this.deps.events.publish({
       type: 'message.deleted',
       payload: {
@@ -215,7 +238,7 @@ export class ChatService {
   /** Rule 21: either member can change it; both get a system message. */
   private async changeRetention(view: ConversationView, retention: Retention, now: Date): Promise<void> {
     await this.deps.conversations.setRetention(view.conversation.id, retention, view.myPersona.id, now);
-    const { message } = await this.deps.conversations.insertMessage({
+    const result = await this.deps.conversations.insertMessage({
       conversationId: view.conversation.id,
       senderPersonaId: view.myPersona.id,
       clientMessageId: `retention:${now.getTime()}`,
@@ -225,7 +248,8 @@ export class ChatService {
       // Deliberately never suppressed: a shared setting that silently changed would reveal a block.
       suppressed: false,
     });
-    await this.publishNew(view, message);
+    if ('attachmentRejected' in result) return;
+    await this.publishNew(view, result.message);
     await this.deps.events.publish({
       type: 'conversation.updated',
       payload: {
@@ -290,3 +314,6 @@ export class ChatService {
     };
   }
 }
+
+export const mediaOff = () =>
+  new DomainError(ErrorCode.MEDIA_NOT_ALLOWED, 'Photos and files are turned off in this chat.');

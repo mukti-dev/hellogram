@@ -9,6 +9,7 @@ import { OtpInput } from '../../auth/components/OtpInput.js';
 import { useAuthStore } from '../../auth/model/auth-store.js';
 import { useMe } from '../../auth/model/queries.js';
 import { startPhoneVerification, type VerificationSession } from '../../../core/phone/verification.js';
+import { OtpDeliveryNote } from '../../auth/components/OtpDeliveryNote.js';
 
 async function downloadMyData() {
   const token = useAuthStore.getState().accessToken;
@@ -94,6 +95,7 @@ function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         ) : (
           <>
             <p className="text-sm text-muted">{t('pin.codeSent')}</p>
+            <OtpDeliveryNote when="after" />
             <OtpInput value={code} onChange={setCode} onComplete={(v) => typed === 'DELETE' && remove.mutate(v)} />
           </>
         )}

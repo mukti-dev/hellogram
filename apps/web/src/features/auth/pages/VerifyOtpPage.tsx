@@ -2,7 +2,7 @@ import { Button } from '@hellogram/ui';
 import { useMutation } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router';
 import { ApiError } from '../../../core/http/api-error.js';
 import {
   getPendingVerification,
@@ -12,22 +12,20 @@ import {
   type PhoneProof,
 } from '../../../core/phone/verification.js';
 import { t } from '../../../i18n/t.js';
-import { authApi, type LoginResponse } from '../api/auth.api.js';
+import { authApi } from '../api/auth.api.js';
 import { AuthLayout } from '../components/AuthLayout.js';
-import { ConsentStep } from '../components/ConsentStep.js';
 import { FormError } from '../components/FormError.js';
+import { OtpDeliveryNote } from '../components/OtpDeliveryNote.js';
 import { OtpInput } from '../components/OtpInput.js';
 import { useAuthStore } from '../model/auth-store.js';
+import { nextPath, withNext } from '../model/next-path.js';
 
-interface VerifyState {
-  channel: 'phone' | 'email';
-  target: string;
-}
+/** Sign-up (verify the mobile) or login on a new device (verify it's you). */
+type VerifyState = { flow: 'signup'; phone: string; signupId: string } | { flow: 'device'; phone: string; ticket: string };
 
 const RESEND_SECONDS = 30;
 
-const formatTarget = ({ channel, target }: VerifyState) =>
-  channel === 'phone' ? `${target.slice(0, 3)} ${target.slice(3, 8)} ${target.slice(8)}` : target;
+const formatPhone = (phone: string) => `${phone.slice(0, 3)} ${phone.slice(3, 8)} ${phone.slice(8)}`;
 
 function useCountdown(seconds: number) {
   const [left, setLeft] = useState(seconds);
@@ -41,52 +39,51 @@ function useCountdown(seconds: number) {
 
 export function VerifyOtpPage() {
   const state = useLocation().state as VerifyState | null;
-  if (!state?.target) return <Navigate to="/login" replace />;
-  // After a reload the in-memory phone verification is gone: start again.
-  if (state.channel === 'phone' && !getPendingVerification(state.target)) return <Navigate to="/login" replace />;
+  const startOver = state?.flow === 'signup' ? '/signup' : '/login';
+  if (!state?.phone) return <Navigate to={startOver} replace />;
+  // After a reload the in-memory verification is gone: start again.
+  if (!getPendingVerification(state.phone)) return <Navigate to={startOver} replace />;
   return <VerifyOtp {...state} />;
 }
 
 function VerifyOtp(props: VerifyState) {
   const navigate = useNavigate();
+  const { search } = useLocation();
   const signIn = useAuthStore((s) => s.signIn);
   const [code, setCode] = useState('');
-  const [consentVersion, setConsentVersion] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const countdown = useCountdown(RESEND_SECONDS);
-  // The phone proof is kept so the 18+ step can resubmit it (a Firebase code can only be confirmed once).
+  // A Firebase code can only be confirmed once; keep the proof for a retry after a server error.
   const proof = useRef<PhoneProof | null>(null);
 
   const verify = useMutation({
-    mutationFn: async (input: { code: string; ageConfirmed?: boolean; consentVersion?: string }): Promise<LoginResponse> => {
-      if (props.channel === 'email') return authApi.verifyEmailOtp({ email: props.target, code: input.code });
+    mutationFn: async (value: string) => {
       if (!proof.current) {
-        const session = getPendingVerification(props.target);
+        const session = getPendingVerification(props.phone);
         if (!session) throw new Error(t('auth.restart'));
-        proof.current = await session.confirm(input.code);
+        proof.current = await session.confirm(value);
       }
-      const consent = input.ageConfirmed ? { ageConfirmed: true, consentVersion: input.consentVersion ?? '' } : {};
-      return authApi.verifyPhoneProof(props.target, proof.current, consent);
+      return props.flow === 'signup'
+        ? authApi.signupVerify(props.signupId, proof.current)
+        : authApi.loginVerify(props.ticket, proof.current);
     },
     onSuccess: (result) => {
       signIn(result.accessToken);
-      navigate('/numbers', { replace: true });
+      navigate(nextPath(search), { replace: true });
     },
-    onError: (error) => {
-      if (error instanceof ApiError && error.code === 'AGE_CONFIRMATION_REQUIRED') {
-        const details = error.details as { consentVersion?: string } | undefined;
-        setConsentVersion(details?.consentVersion ?? '');
-      } else {
-        proof.current = null; // wrong code etc.: let the user try again
-      }
+    onError: () => {
+      proof.current = null; // wrong code etc.: let the user try again
     },
   });
 
   const resend = useMutation({
-    mutationFn: async () => {
-      if (props.channel === 'email') return authApi.sendEmailOtp(props.target);
-      setPendingVerification(props.target, await startPhoneVerification(props.target, () => authApi.sendPhoneOtp(props.target)));
-    },
+    mutationFn: async () =>
+      setPendingVerification(
+        props.phone,
+        await startPhoneVerification(props.phone, () =>
+          props.flow === 'signup' ? authApi.signupResend(props.signupId) : authApi.loginResend(props.ticket),
+        ),
+      ),
     onSuccess: () => {
       proof.current = null;
       countdown.restart();
@@ -95,42 +92,35 @@ function VerifyOtp(props: VerifyState) {
     },
   });
 
-  const error = [verify.error, resend.error].find(
-    (e): e is Error => e instanceof Error && !(e instanceof ApiError && e.code === 'AGE_CONFIRMATION_REQUIRED'),
-  );
+  const error = verify.error ?? resend.error;
+  const accountExists = error instanceof ApiError && error.code === 'ACCOUNT_EXISTS';
   const submit = (value = code) => {
     setNotice(null);
-    if (value.length === 6) verify.mutate({ code: value });
+    if (value.length === 6) verify.mutate(value);
   };
-
-  if (consentVersion !== null) {
-    return (
-      <AuthLayout>
-        <ConsentStep
-          pending={verify.isPending}
-          error={error?.message ?? null}
-          onConfirm={() => verify.mutate({ code, ageConfirmed: true, consentVersion })}
-        />
-      </AuthLayout>
-    );
-  }
 
   const mm = String(Math.floor(countdown.left / 60)).padStart(2, '0');
   const ss = String(countdown.left % 60).padStart(2, '0');
+  const target = formatPhone(props.phone);
 
   return (
     <AuthLayout>
       <button
         type="button"
-        onClick={() => navigate(props.channel === 'phone' ? '/login' : '/login/email')}
+        onClick={() => navigate(withNext(props.flow === 'signup' ? '/signup' : '/login', search))}
         aria-label={t('auth.back')}
         className="mb-6 inline-flex size-11 items-center justify-center rounded-full border border-border text-muted hover:bg-surface-2"
       >
         <ArrowLeft className="size-5" aria-hidden />
       </button>
 
-      <h1 className="text-2xl font-bold tracking-tight">{t('auth.enterOtp')}</h1>
-      <p className="mt-1 text-sm text-muted">{t('auth.sentTo', { target: formatTarget(props) })}</p>
+      <h1 className="text-2xl font-bold tracking-tight">
+        {props.flow === 'signup' ? t('auth.verifyMobileTitle') : t('auth.verifyDeviceTitle')}
+      </h1>
+      <p className="mt-1 text-sm text-muted">
+        {props.flow === 'signup' ? t('auth.sentTo', { target }) : t('auth.verifyDeviceBody', { target })}
+      </p>
+      <OtpDeliveryNote when="after" className="mt-4" />
 
       <form
         className="mt-8 flex flex-col gap-5"
@@ -139,15 +129,18 @@ function VerifyOtp(props: VerifyState) {
           submit();
         }}
       >
-        <OtpInput
-          value={code}
-          onChange={setCode}
-          onComplete={submit}
-          disabled={verify.isPending}
-          invalid={Boolean(error)}
-        />
+        <OtpInput value={code} onChange={setCode} onComplete={submit} disabled={verify.isPending} invalid={Boolean(error)} />
         <FormError message={error?.message ?? null} />
-        {notice && <p className="text-sm text-success" role="status">{notice}</p>}
+        {accountExists && (
+          <Link to={withNext('/login', search)} className="text-sm font-semibold text-primary underline underline-offset-4">
+            {t('auth.logIn')}
+          </Link>
+        )}
+        {notice && (
+          <p className="text-sm text-success" role="status">
+            {notice}
+          </p>
+        )}
 
         <Button type="submit" variant="gradient" size="lg" fullWidth disabled={code.length !== 6 || verify.isPending}>
           {t('auth.verify')}
@@ -170,7 +163,7 @@ function VerifyOtp(props: VerifyState) {
 
         {import.meta.env.DEV && (
           <p className="rounded-md bg-surface-2 p-3 text-xs text-muted">
-            {phoneAuthMode === 'firebase' && props.channel === 'phone' ? t('auth.devHintFirebase') : t('auth.devHint')}
+            {phoneAuthMode === 'firebase' ? t('auth.devHintFirebase') : t('auth.devHint')}
           </p>
         )}
       </form>

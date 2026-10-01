@@ -1,29 +1,42 @@
 import { isValidNumberCode, normalizeNumberCode, type OwnPersonaDto } from '@hellogram/shared';
 import { Avatar, Button, Card, Logo, NumberCode, TextField, cn } from '@hellogram/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, ChevronDown, EyeOff, ShieldCheck, Smartphone } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Turnstile, turnstileEnabled } from '../../../shared/Turnstile.js';
-import { phoneAuthMode, startPhoneVerification, type PhoneProof, type VerificationSession } from '../../../core/phone/verification.js';
-import { Link, Navigate, useParams } from 'react-router';
-import { ApiError } from '../../../core/http/api-error.js';
+import { CheckCircle2, EyeOff, ShieldCheck, Smartphone } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { t } from '../../../i18n/t.js';
-import { authApi } from '../../auth/api/auth.api.js';
 import { AdultsOnlyFooter } from '../../auth/components/AdultsOnlyFooter.js';
-import { ConsentStep } from '../../auth/components/ConsentStep.js';
 import { FormError } from '../../auth/components/FormError.js';
-import { OtpInput } from '../../auth/components/OtpInput.js';
 import { refreshAccessToken } from '../../../core/http/client.js';
 import { useAuthStore } from '../../auth/model/auth-store.js';
 import { numbersApi } from '../../numbers/api/numbers.api.js';
 import { requestsApi } from '../../requests/api/requests.api.js';
+import { LabelEditor, type LabelValue } from '../../numbers/components/LabelPicker.js';
 
-type Step = 'form' | 'otp' | 'consent' | 'name' | 'sent';
+type Step = 'form' | 'name' | 'sent';
 const INTRO_MAX = 300;
 
+/** The intro survives the trip through sign-up / login (this tab only). */
+const draftKey = (code: string) => `hg-intro:${code}`;
+const readDraft = (code: string) => {
+  try {
+    return window.sessionStorage.getItem(draftKey(code)) ?? '';
+  } catch {
+    return '';
+  }
+};
+const saveDraft = (code: string, value: string) => {
+  try {
+    if (value) window.sessionStorage.setItem(draftKey(code), value);
+    else window.sessionStorage.removeItem(draftKey(code));
+  } catch {
+    /* storage blocked: the intro just isn't kept */
+  }
+};
+
 /**
- * Receiver web entry (screen 6): works logged out. A visitor verifies their phone,
- * gets their own first number (they pick the name) and the request is sent from it.
+ * Receiver web entry (screen 6). Visitors sign up (or log in) first, then come back here,
+ * pick or create the number they send from, and send the request.
  */
 export function PublicNumberPage() {
   const { code: raw = '' } = useParams();
@@ -36,20 +49,19 @@ export function PublicNumberPage() {
 function PublicNumber({ code }: { code: string }) {
   const card = useQuery({ queryKey: ['public', code], queryFn: () => requestsApi.publicCard(code), retry: false });
   const status = useAuthStore((s) => s.status);
-  const signIn = useAuthStore((s) => s.signIn);
+  const navigate = useNavigate();
 
   const [step, setStep] = useState<Step>('form');
-  const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState('');
-  const [intro, setIntro] = useState('');
+  const [intro, setIntroState] = useState(() => readDraft(code));
+  const setIntro = (value: string) => {
+    setIntroState(value);
+    saveDraft(code, value);
+  };
   const [name, setName] = useState('');
+  const [label, setLabel] = useState<LabelValue>({ labelName: '', labelIcon: 'tag' });
   const [fromId, setFromId] = useState<string | null>(null);
-  const [consentVersion, setConsentVersion] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [human, setHuman] = useState<string | null>(null);
-  const onToken = useCallback((t: string | null) => setHuman(t), []);
-  const digits = mobile.replace(/\D/g, '');
-  const phone = `+91${digits}`;
+  const next = encodeURIComponent(`/${code}`);
 
   // Restore an existing session silently (the page is public, so it isn't behind the guard).
   useEffect(() => {
@@ -68,59 +80,27 @@ function PublicNumber({ code }: { code: string }) {
 
   const sendRequest = useMutation({
     mutationFn: (fromPersonaId: string) => requestsApi.send({ fromPersonaId, toCode: code, introMessage: intro }),
-    onSuccess: () => setStep('sent'),
+    onSuccess: () => {
+      saveDraft(code, '');
+      setStep('sent');
+    },
     onError: fail,
   });
 
   const createAndSend = useMutation({
     mutationFn: async () => {
-      const created = await numbersApi.create({ displayName: name, labelKind: 'other', labelText: null, allowCalls: true });
+      const created = await numbersApi.create({
+        displayName: name,
+        labelName: label.labelName.trim(),
+        labelIcon: label.labelIcon,
+        allowCalls: true,
+        allowMedia: true,
+      });
       if (created.kind !== 'created') throw new Error('Could not create your number');
       await requestsApi.send({ fromPersonaId: created.persona.id, toCode: code, introMessage: intro });
     },
     onSuccess: () => setStep('sent'),
     onError: fail,
-  });
-
-  const verification = useRef<VerificationSession | null>(null);
-  const proof = useRef<PhoneProof | null>(null);
-
-  const sendOtp = useMutation({
-    mutationFn: async () => {
-      verification.current = await startPhoneVerification(phone, () => authApi.sendPhoneOtp(phone, human));
-      proof.current = null;
-    },
-    onSuccess: () => {
-      setError(null);
-      setStep('otp');
-    },
-    onError: fail,
-  });
-
-  const verify = useMutation({
-    mutationFn: async (input: { ageConfirmed?: boolean; consentVersion?: string }) => {
-      // Keep the proof: the 18+ step resubmits it (a Firebase code can only be confirmed once).
-      proof.current ??= await verification.current!.confirm(otp);
-      return authApi.verifyPhoneProof(phone, proof.current, input);
-    },
-    onSuccess: async (result) => {
-      signIn(result.accessToken);
-      setError(null);
-      const list = await numbersApi.list();
-      const active = list.items.filter((p) => p.status === 'active');
-      if (active.length === 0) setStep('name');
-      else if (active.length === 1) sendRequest.mutate(active[0]!.id);
-      else setStep('form');
-    },
-    onError: (e) => {
-      if (e instanceof ApiError && e.code === 'AGE_CONFIRMATION_REQUIRED') {
-        setConsentVersion((e.details as { consentVersion?: string } | undefined)?.consentVersion ?? '');
-        setStep('consent');
-      } else {
-        proof.current = null;
-        fail(e);
-      }
-    },
   });
 
   if (card.isLoading) return <Shell>{t('common.loading')}</Shell>;
@@ -137,7 +117,7 @@ function PublicNumber({ code }: { code: string }) {
 
   const person = card.data;
   const firstName = person.displayName.split(' ')[0] ?? person.displayName;
-  const busy = sendOtp.isPending || verify.isPending || sendRequest.isPending || createAndSend.isPending;
+  const busy = sendRequest.isPending || createAndSend.isPending;
 
   const introField = (
     <div className="flex flex-col gap-1.5">
@@ -180,43 +160,19 @@ function PublicNumber({ code }: { code: string }) {
       ) : (
         <div className="mt-5 flex flex-col gap-4">
           {step === 'form' && status !== 'authenticated' && (
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (/^[6-9]\d{9}$/.test(digits)) sendOtp.mutate();
-              }}
-            >
-              <div className="flex h-12 items-center rounded-md border border-border bg-surface-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/40">
-                <span className="flex h-full items-center gap-1 border-r border-border px-3 text-sm font-semibold">
-                  +91 <ChevronDown className="size-4 text-muted" aria-hidden />
-                </span>
-                <label htmlFor="visitor-mobile" className="sr-only">
-                  {t('auth.mobileLabel')}
-                </label>
-                <input
-                  id="visitor-mobile"
-                  type="tel"
-                  inputMode="numeric"
-                  autoComplete="tel-national"
-                  placeholder={t('auth.mobilePlaceholder')}
-                  value={mobile}
-                  onChange={(e) => setMobile(e.target.value.replace(/[^\d\s]/g, '').slice(0, 11))}
-                  className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-muted"
-                />
-              </div>
-              {phoneAuthMode === 'otp' && <Turnstile onToken={onToken} />}
-              <Button
-                type="submit"
-                variant="gradient"
-                size="lg"
-                fullWidth
-                disabled={!/^[6-9]\d{9}$/.test(digits) || busy || (turnstileEnabled && phoneAuthMode === 'otp' && !human)}
-              >
-                {t('auth.sendOtp')}
-              </Button>
+            <div className="flex flex-col gap-4">
               {introField}
-            </form>
+              <p className="text-center text-sm text-muted">{t('public.joinFirst', { name: firstName })}</p>
+              <Button variant="gradient" size="lg" fullWidth onClick={() => navigate(`/signup?next=${next}`)}>
+                {t('public.signupToSend')}
+              </Button>
+              <p className="text-center text-sm text-muted">
+                {t('auth.haveAccount')}{' '}
+                <Link to={`/login?next=${next}`} className="font-semibold text-primary underline underline-offset-4">
+                  {t('auth.logIn')}
+                </Link>
+              </p>
+            </div>
           )}
 
           {step === 'form' && status === 'authenticated' && (
@@ -256,33 +212,16 @@ function PublicNumber({ code }: { code: string }) {
             </form>
           )}
 
-          {step === 'otp' && (
-            <div className="flex flex-col gap-4">
-              <p className="text-center text-sm text-muted">{t('auth.sentTo', { target: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}` })}</p>
-              <OtpInput value={otp} onChange={setOtp} onComplete={() => verify.mutate({})} disabled={busy} />
-              <Button variant="gradient" size="lg" fullWidth disabled={otp.length !== 6 || busy} onClick={() => verify.mutate({})}>
-                {t('auth.verify')}
-              </Button>
-              {import.meta.env.DEV && <p className="rounded-md bg-surface-2 p-3 text-xs text-muted">{t('auth.devHint')}</p>}
-            </div>
-          )}
-
-          {step === 'consent' && (
-            <ConsentStep
-              pending={busy}
-              error={error}
-              onConfirm={() => verify.mutate({ ageConfirmed: true, consentVersion })}
-            />
-          )}
-
           {step === 'name' && (
             <form
               className="flex flex-col gap-4"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (name.trim()) createAndSend.mutate();
+                if (name.trim() && label.labelName.trim()) createAndSend.mutate();
               }}
             >
+              <p className="text-sm text-muted">{t('public.firstNumber')}</p>
+              <LabelEditor value={label} onChange={setLabel} />
               <TextField
                 label={t('public.yourName')}
                 hint={t('public.yourNameHint', { name: firstName })}
@@ -292,7 +231,7 @@ function PublicNumber({ code }: { code: string }) {
                 autoFocus
               />
               {introField}
-              <Button type="submit" variant="gradient" size="lg" fullWidth disabled={!name.trim() || busy}>
+              <Button type="submit" variant="gradient" size="lg" fullWidth disabled={!name.trim() || !label.labelName.trim() || busy}>
                 {t('public.sendRequest')}
               </Button>
             </form>
@@ -309,7 +248,7 @@ function PublicNumber({ code }: { code: string }) {
             </Card>
           )}
 
-          {step !== 'consent' && <FormError message={error} />}
+          <FormError message={error} />
         </div>
       )}
 

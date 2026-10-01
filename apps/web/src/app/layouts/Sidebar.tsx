@@ -77,9 +77,9 @@ export function Sidebar() {
             aria-label={t('profile.open')}
             className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 hover:bg-surface-2"
           >
-            <Avatar name={t('common.myAccount')} size={40} />
+            <Avatar name={me.data?.name ?? t('common.myAccount')} size={40} />
             <div className="min-w-0 flex-1 text-sm">
-              <p className="truncate font-semibold">{t('common.myAccount')}</p>
+              <p className="truncate font-semibold">{me.data?.name ?? t('common.myAccount')}</p>
               <p className="truncate text-xs text-muted">{me.data ? formatPhone(me.data.phone) : ' '}</p>
             </div>
           </Link>

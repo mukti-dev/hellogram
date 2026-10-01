@@ -7,7 +7,7 @@
  */
 import 'dotenv/config';
 import { randomInt } from 'node:crypto';
-import { createPrismaClient, type LabelKind } from '../src/index.js';
+import { createPrismaClient } from '../src/index.js';
 
 const prisma = createPrismaClient(process.env.DATABASE_URL ?? '');
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -25,14 +25,55 @@ function code(): string {
   }
 }
 
+/** Every demo account logs in with this password (argon2id hash of "Hello@2026"). */
+export const DEMO_PASSWORD = 'Hello@2026';
+const DEMO_PASSWORD_HASH = '$argon2id$v=19$m=19456,p=1,t=2$3pq1dDL2Sa8VKyargHGZsQ$j97MydyqKWNw/NkjaDU0jeEMvHtYJ5hgW+49KGU+BGw';
+
+const DEMO_ACCOUNTS: [phone: string, name: string, gender: 'male' | 'female'][] = [
+  ['+919999900001', 'Demo User', 'male'],
+  ['+919999900002', 'Amit Kumar', 'male'],
+  ['+919999900003', 'Sneha R', 'female'],
+  ['+919999900004', 'Rohit Mehta', 'male'],
+  ['+919999900005', 'Priya Singh', 'female'],
+  ['+919999900006', 'Vikram', 'male'],
+  ['+919999900007', 'Karan Patel', 'male'],
+  ['+919999900008', 'Neha Sharma', 'female'],
+];
+
+const profile = (phone: string) => {
+  const [, name, gender] = DEMO_ACCOUNTS.find(([p]) => p === phone) ?? [phone, 'Demo User', 'male'];
+  return { name, gender, dateOfBirth: new Date('1995-05-10T00:00:00Z'), passwordHash: DEMO_PASSWORD_HASH };
+};
+
 async function account(phone: string) {
   return prisma.account.create({
-    data: { phone, ageConfirmedAt: ago(30 * DAY), createdAt: ago(30 * DAY), consents: { create: { version: '2026-09-v1' } } },
+    data: {
+      phone,
+      ...profile(phone),
+      ageConfirmedAt: ago(30 * DAY),
+      createdAt: ago(30 * DAY),
+      consents: { create: { version: '2026-09-v1' } },
+    },
   });
 }
 
-async function persona(accountId: string, displayName: string, labelKind: LabelKind, extra: Record<string, unknown> = {}) {
-  return prisma.persona.create({ data: { accountId, code: code(), displayName, labelKind, createdAt: ago(20 * DAY), ...extra } });
+/** Demo accounts seeded before passwords existed get a name, birthday, gender and the demo password. */
+async function upgradeDemoLogins() {
+  for (const [phone] of DEMO_ACCOUNTS) {
+    await prisma.account.updateMany({ where: { phone, passwordHash: null }, data: profile(phone) });
+  }
+}
+
+/** Labels are the user's own words + an icon (these mirror the designs). */
+async function persona(
+  accountId: string,
+  displayName: string,
+  [labelName, labelIcon]: [name: string, icon: string],
+  extra: Record<string, unknown> = {},
+) {
+  return prisma.persona.create({
+    data: { accountId, code: code(), displayName, labelName, labelIcon, createdAt: ago(20 * DAY), ...extra },
+  });
 }
 
 let seq = 0;
@@ -66,15 +107,16 @@ async function conversation(a: { id: string }, b: { id: string }, lines: [who: '
 
 async function main() {
   if (await prisma.account.findUnique({ where: { phone: '+919999900001' } })) {
-    console.log('Demo data already present — nothing to do.');
+    await upgradeDemoLogins();
+    console.log(`Demo data already present — demo logins use the password ${DEMO_PASSWORD}.`);
     return;
   }
 
   // The demo owner: three numbers like the "My numbers" design (2 free · 1 paid).
   const owner = await account('+919999900001');
-  const rahul = await persona(owner.id, 'Rahul Deals', 'olx');
-  const coffee = await persona(owner.id, 'Coffee Chats', 'dating', { allowCalls: false });
-  const rental = await persona(owner.id, 'Rental Enquiries', 'tenants', { status: 'paused', pauseReason: 'user', isPaid: true });
+  const rahul = await persona(owner.id, 'Rahul Deals', ['OLX', 'shopping-bag']);
+  const coffee = await persona(owner.id, 'Coffee Chats', ['Dating', 'heart'], { allowCalls: false });
+  const rental = await persona(owner.id, 'Rental Enquiries', ['Tenants', 'home'], { status: 'paused', pauseReason: 'user', isPaid: true });
   const sub = await prisma.subscription.create({
     data: { accountId: owner.id, provider: 'dev', providerSubId: 'dev_sub_seed', quantity: 1, status: 'active', currentPeriodEnd: new Date(now + 20 * DAY) },
   });
@@ -96,7 +138,7 @@ async function main() {
   const p: Record<string, { id: string }> = {};
   for (const [phone, name] of PEOPLE) {
     const acct = await account(phone);
-    p[name] = await persona(acct.id, name, 'other');
+    p[name] = await persona(acct.id, name, ['Personal', 'users']);
   }
 
   // Pending contact requests (screen 7).
@@ -140,6 +182,7 @@ async function main() {
   console.log('Demo data created.');
   console.log('Owner: mobile 99999 00001 — numbers Rahul Deals, Coffee Chats, Rental Enquiries.');
   console.log('Others: 99999 00002 … 00008 (Amit, Sneha, Rohit, Priya, Vikram, Karan, Neha).');
+  console.log(`Every demo account logs in with the password ${DEMO_PASSWORD}.`);
 }
 
 main()

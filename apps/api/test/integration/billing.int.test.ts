@@ -14,7 +14,7 @@ beforeEach(async () => h.reset());
 type Checkout = { checkout: { draftId: string; provider: string; payload: Record<string, unknown> } };
 
 async function buyThird(user: User, name = 'Paid One') {
-  const res = await user.request<Checkout>({ method: 'POST', url: '/v1/personas', payload: { displayName: name, labelKind: 'tenants', allowCalls: true } });
+  const res = await user.request<Checkout>({ method: 'POST', url: '/v1/personas', payload: { displayName: name, labelName: 'Tenants', labelIcon: 'home', allowCalls: true } });
   expect(res.status).toBe(402);
   const confirm = await user.request<{ personaId: string }>({
     method: 'POST',
@@ -52,7 +52,7 @@ describe('paid numbers (rules 5, 9)', () => {
     await createNumber(user, 'B');
     await buyThird(user);
     await h.db.query(`UPDATE personas SET "createdAt" = now() - interval '8 days'`); // stay under 3 new per week
-    const fourth = await user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: 'D', labelKind: 'olx', allowCalls: true } });
+    const fourth = await user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: 'D', labelName: 'OLX', labelIcon: 'shopping-bag', allowCalls: true } });
     expect(fourth.status).toBe(201);
     expect(fourth.body).toMatchObject({ displayName: 'D', isPaid: true });
     expect((await billing(user)).subscription?.quantity).toBe(2);

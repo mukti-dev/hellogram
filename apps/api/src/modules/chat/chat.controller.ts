@@ -1,5 +1,5 @@
 import type { ChatService } from '@hellogram/application';
-import type { LabelKind, SendMessageBody, UpdateConversationBody } from '@hellogram/shared';
+import type { SendMessageBody, UpdateConversationBody } from '@hellogram/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { actorOf } from '../../plugins/auth.js';
 import type { AvatarUrl } from '../shared-mappers.js';
@@ -15,11 +15,11 @@ export class ChatController {
 
   inbox = async (
     request: FastifyRequest<{
-      Querystring: { personaId?: string; label?: LabelKind; unread?: boolean; q?: string; cursor?: string };
+      Querystring: { personaId?: string; label?: string; unread?: boolean; q?: string; cursor?: string };
     }>,
   ) => {
     const { personaId, label, unread, q, cursor } = request.query;
-    const result = await this.chat.inbox(actorOf(request), { personaId, labelKind: label, unreadOnly: unread, query: q, cursor });
+    const result = await this.chat.inbox(actorOf(request), { personaId, label, unreadOnly: unread, query: q, cursor });
     return {
       items: result.items.map((row) => toConversationDto(row, this.avatarUrl)),
       nextCursor: result.nextCursor,

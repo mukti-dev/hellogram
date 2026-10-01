@@ -30,6 +30,11 @@ export const handlers: Record<string, Record<string, JobHandler>> = {
     'retention.purgeMetadata': async (_job, logger, c) => {
       logger.info(await c.maintenance.purgeOldMetadata(), 'old metadata purged');
     },
+    // Deleted / expired / never-sent files are destroyed in storage.
+    'attachments.sweep': async (_job, logger, c) => {
+      const removed = await c.maintenance.sweepAttachments();
+      if (removed) logger.info({ removed }, 'attachment files destroyed');
+    },
     'reports.purgeEvidence': async (_job, logger, c) => {
       logger.info({ purged: await c.maintenance.purgeClosedReportEvidence() }, 'closed report evidence purged');
     },
@@ -75,6 +80,7 @@ export const handlers: Record<string, Record<string, JobHandler>> = {
 
 export const repeatableJobs: RepeatableJob[] = [
   { queue: QUEUES.maintenance, name: 'retention.purgeContent', every: 10 * MIN },
+  { queue: QUEUES.maintenance, name: 'attachments.sweep', every: 10 * MIN },
   { queue: QUEUES.maintenance, name: 'requests.expire', every: 60 * MIN },
   { queue: QUEUES.maintenance, name: 'calls.sweepRinging', every: MIN },
   { queue: QUEUES.maintenance, name: 'account.applyPhoneChanges', every: 5 * MIN },

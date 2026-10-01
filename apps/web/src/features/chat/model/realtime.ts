@@ -4,6 +4,7 @@ import { getSocket } from '../../../core/realtime/socket.js';
 import { useSoundPrefs } from '../../../core/sound/sound-prefs.js';
 import { playMessageTone } from '../../../core/sound/tones.js';
 import type { ConversationDto } from '@hellogram/shared';
+import { forgetAttachment } from './attachments.js';
 import { bumpStatus, updateMessages, upsertMessage } from './cache.js';
 import { chatKeys } from './keys.js';
 import { useOutbox } from './outbox.js';
@@ -50,9 +51,11 @@ onRealtime('message:read', (client) => (p: { conversationId: string; upToMessage
 });
 
 onRealtime('message:deleted', (client) => (p: { conversationId: string; messageId: string; scope: 'me' | 'everyone' }) => {
-  updateMessages(client, p.conversationId, (m) =>
-    m.id !== p.messageId ? m : p.scope === 'me' ? null : { ...m, deleted: true, body: null },
-  );
+  updateMessages(client, p.conversationId, (m) => {
+    if (m.id !== p.messageId) return m;
+    if (m.attachment) forgetAttachment(m.attachment.id);
+    return p.scope === 'me' ? null : { ...m, deleted: true, body: null, attachment: null };
+  });
   void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });
 });
 

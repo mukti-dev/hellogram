@@ -27,7 +27,7 @@ export function SettingsPage() {
       <div className="flex flex-col gap-4 px-4 pb-8 lg:px-8">
         <Link to="/settings/profile" className="block" aria-label={t('profile.open')}>
           <Card className="flex items-center gap-3 p-4 hover:border-primary/50">
-            <Avatar name={t('common.myAccount')} size={48} />
+            <Avatar name={me.data?.name ?? t('common.myAccount')} size={48} />
             <div className="min-w-0 flex-1">
               <p className="font-semibold">{t('profile.title')}</p>
               <p className="truncate text-sm text-muted">{me.data ? formatPhone(me.data.phone) : ' '}</p>
