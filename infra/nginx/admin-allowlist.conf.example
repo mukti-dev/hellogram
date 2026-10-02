@@ -1,0 +1,6 @@
+# Copy to infra/nginx/admin-allowlist.conf and list the addresses allowed to open the admin panel
+# (office, VPN). Everyone else gets 403. Reload nginx after editing:
+#   docker compose -f infra/docker-compose.prod.yml exec nginx nginx -s reload
+allow 203.0.113.10;
+# allow 198.51.100.0/24;
+deny all;

@@ -91,6 +91,16 @@
         "--strictPort"
       ],
       "port": 5180
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hellogram/site",
+        "dev"
+      ],
+      "port": 5176
     }
   ]
 }

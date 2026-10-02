@@ -4,27 +4,53 @@ Operational procedures. Keep this file short and current; link out for detail.
 
 ---
 
-## 1. Deploy (single server)
+## 1. Deploy (single server, nginx)
 
-Target: one AWS Lightsail 4 GB instance in Mumbai (ap-south-1), Docker Compose, Cloudflare in front.
+Target: one AWS Lightsail instance in Mumbai (ap-south-1), Docker Compose, nginx in front.
 
-1. **Server**: Ubuntu LTS, Docker Engine + Compose plugin, firewall open for 80/443 (TCP+UDP), 3478 (TCP+UDP), 5349 (TCP), 49152–65535 (UDP, TURN relay).
-2. **DNS** (Cloudflare): `hellogram.app` and `admin.hellogram.app` → server IP (proxied, orange cloud); `turn.hellogram.app` → server IP (**DNS only**, grey cloud — TURN can't go through Cloudflare).
-3. **Secrets**: `cp infra/.env.production.example infra/.env.production` and fill every value
-   (`openssl rand -base64 48` for `JWT_ACCESS_SECRET`, `HASH_SECRET`, `ADMIN_JWT_SECRET`, `TURN_SHARED_SECRET`).
-   Put the Postgres password in `infra/secrets/postgres_password`. Set `TRUST_PROXY=1` (Caddy) and configure Caddy
-   `trusted_proxies` for Cloudflare ranges so the client IP is correct.
-4. **TURN**: edit `infra/coturn/turnserver.prod.conf` — `external-ip`, `static-auth-secret` (= `TURN_SHARED_SECRET`), TLS cert paths.
-5. **Start**:
+| Address | What | Served by |
+|---|---|---|
+| `https://hellogram.in` | Landing page (+ `hellogram.in/A482719K` share links → the app) | nginx, `apps/site` |
+| `https://app.hellogram.in` | Web app; `/v1`, `/socket.io`, `/media` → API | nginx → `api:4000` |
+| `https://admin.hellogram.in` | Admin panel (allow-listed IPs only); `/admin/v1` → admin API | nginx → `admin-api:4100` |
+| `turn.hellogram.in` | Call relay, ports 3478 / 5349 | coturn (host network) |
+
+1. **Server**: Ubuntu LTS, Docker Engine + Compose plugin. Firewall (Lightsail "Networking"): 80 and 443 TCP,
+   3478 TCP+UDP, 5349 TCP, 49152–65535 UDP (call relay).
+2. **DNS** — A records to the server's static IP: `hellogram.in`, `www.hellogram.in`, `app.hellogram.in`,
+   `admin.hellogram.in`, `turn.hellogram.in`. If you use Cloudflare, `turn` must be **DNS only** (grey cloud); the
+   others may be proxied — nginx already reads the visitor's real IP from Cloudflare (`snippets/cloudflare-realip.conf`).
+3. **Settings**: `cp infra/.env.production.example infra/.env.production` and fill every value
+   (`openssl rand -base64 48` for `JWT_ACCESS_SECRET`, `HASH_SECRET`, `ADMIN_JWT_SECRET`, `TURN_SHARED_SECRET`;
+   `openssl rand -base64 32` for `ATTACHMENT_ENCRYPTION_KEY`). Keep `TRUST_PROXY=1` (one nginx hop).
+   Put the Postgres password in `infra/secrets/postgres_password`.
+4. **Admin access**: `cp infra/nginx/admin-allowlist.conf.example infra/nginx/admin-allowlist.conf` and list your
+   office/VPN addresses (`allow …;`, ending with `deny all;`). nginx won't start without this file.
+5. **Call relay**: in `infra/coturn/turnserver.prod.conf` set `external-ip` (the server's public IP) and
+   `static-auth-secret` (= `TURN_SHARED_SECRET`).
+6. **HTTPS certificate** (first time only; renewals are automatic every 12 h check):
+   ```bash
+   sh infra/nginx/init-certs.sh
+   ```
+   One Let's Encrypt certificate named `hellogram` covers all five names; certbot copies it for coturn after each renewal.
+7. **Build, migrate, start**:
    ```bash
    docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production build
    docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production run --rm migrate
    docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production up -d
    ```
-6. **First admin**: `docker compose … exec admin-api sh -c 'ADMIN_PASSWORD=… node dist/cli/create-admin.js you@company.com admin'`
-   (or run `pnpm --filter @hellogram/admin-api create-admin` from a machine with DB access). Scan the printed QR code
-   (`node dist/cli/admin-qr.js <email>` shows it again).
-7. **Verify**: `https://hellogram.app/health/ready` → `ok`; sign up with a real phone; place a test call between two networks.
+   The browser apps are built inside the `nginx` image, so `VITE_*` values in `.env.production` take effect on build.
+8. **First admin**: `docker compose … exec admin-api sh -c 'ADMIN_PASSWORD=… node dist/cli/create-admin.js you@company.com admin'`.
+   Run it in a terminal on the server and scan the printed QR code (`node dist/cli/admin-qr.js <email>` shows it again).
+9. **Third-party settings**: Firebase (if used) → Authorized domains: `app.hellogram.in`. Turnstile → hostnames
+   `app.hellogram.in`. Razorpay → webhook `https://app.hellogram.in/v1/billing/webhook`.
+10. **Verify**: `https://hellogram.in` shows the landing page and **Sign in** opens `https://app.hellogram.in/login`;
+    `https://app.hellogram.in/health/ready` → `ok`; `https://hellogram.in/<a number code>` opens that number's page;
+    `https://admin.hellogram.in` works only from an allow-listed address; sign up with a real phone; place a test
+    call between two networks.
+
+**Weekly**: `docker compose … restart coturn` (e.g. a Monday 04:00 cron) so the relay picks up renewed certificates
+— nginx reloads them by itself every 6 hours.
 
 The API **refuses to start** in production with `OTP_BYPASS=true`, the dev payment simulator, console SMS/email,
 a loosened rate-limit multiplier, missing Turnstile secret, `TRUST_PROXY=false`, or default secrets.

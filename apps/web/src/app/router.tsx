@@ -64,7 +64,7 @@ export const router = createBrowserRouter([
       { path: 'settings/billing/invoices/:id', element: <InvoicePage /> },
     ],
   },
-  // Public receiver entry: hellogram.app/A482719K (static routes above always win).
+  // Public receiver entry: app.hellogram.in/A482719K (hellogram.in/A482719K redirects here; static routes above always win).
   { path: '/:code', element: <PublicNumberPage /> },
   { path: '*', element: <Navigate to="/numbers" replace /> },
 ]);

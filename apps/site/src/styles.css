@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+@import '@hellogram/ui/theme.css';
+
+@source '../index.html';
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+.hero-glow {
+  background:
+    radial-gradient(60% 50% at 70% 20%, rgb(139 92 246 / 0.35), transparent 70%),
+    radial-gradient(45% 40% at 15% 70%, rgb(79 139 255 / 0.22), transparent 70%),
+    radial-gradient(40% 35% at 90% 85%, rgb(224 86 200 / 0.18), transparent 70%);
+}
+
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details[open] .faq-chevron {
+  transform: rotate(180deg);
+}

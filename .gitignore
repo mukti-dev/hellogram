@@ -12,3 +12,11 @@ packages/db/src/generated/
 .env
 .env.*
 !.env.example
+# Landing-site build settings: only the public app URL, no secrets.
+!apps/site/.env
+!apps/site/.env.production
+# Production secrets (Postgres password etc.).
+infra/secrets/
+
+# Server-specific admin allowlist (see infra/nginx/admin-allowlist.conf.example)
+infra/nginx/admin-allowlist.conf

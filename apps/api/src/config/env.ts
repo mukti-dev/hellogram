@@ -62,7 +62,7 @@ export const apiEnvSchema = baseEnvSchema
     TURNSTILE_SECRET: z.string().optional(),
     /**
      * Which proxies to trust for the client IP (rate limits key on it):
-     * "false" (direct), a hop count ("1" behind Caddy), or comma-separated CIDRs.
+     * "false" (direct), a hop count ("1" behind nginx), or comma-separated CIDRs.
      */
     TRUST_PROXY: z
       .string()

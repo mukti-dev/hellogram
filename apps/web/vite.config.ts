@@ -7,6 +7,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 const API = process.env.HELLOGRAM_API_PROXY ?? 'http://localhost:4000';
 
 export default defineConfig({
+  // Never inline assets as data: URLs — the production CSP only allows fonts/images from our own origin.
+  build: { assetsInlineLimit: 0 },
   plugins: [
     react(),
     tailwindcss(),

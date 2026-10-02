@@ -10,13 +10,47 @@ x-app: &app
     redis: { condition: service_healthy }
 
 services:
-  caddy:
-    build: { context: .., dockerfile: infra/docker/Dockerfile, target: caddy }
+  # hellogram.in (landing) · app.hellogram.in (web app + API) · admin.hellogram.in (admin panel).
+  nginx:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+      target: nginx
+      args:
+        VITE_APP_URL: https://${APP_DOMAIN}
+        VITE_PHONE_AUTH: ${VITE_PHONE_AUTH:-otp}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     restart: unless-stopped
-    env_file: .env.production
-    ports: ["80:80", "443:443", "443:443/udp"]
-    volumes: [caddy-data:/data, caddy-config:/config]
+    # Only the domain names — the web server never needs the app's secrets.
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN}
+      APP_DOMAIN: ${APP_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+      - ./nginx/admin-allowlist.conf:/etc/nginx/admin-allowlist.conf:ro
+    # Pick up renewed certificates without a restart.
+    command: ["/bin/sh", "-c", "while :; do sleep 6h; nginx -s reload; done & exec /docker-entrypoint.sh nginx -g 'daemon off;'"]
     depends_on: [api, admin-api]
+
+  # Renews the Let's Encrypt certificate (first one: infra/nginx/init-certs.sh).
+  certbot:
+    image: certbot/certbot:v3.1.0
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+      - ./nginx/certbot-hooks:/hooks:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --deploy-hook 'sh /hooks/copy-for-coturn.sh' --quiet; sleep 12h & wait $${!}; done"
 
   api:
     <<: *app
@@ -64,7 +98,7 @@ services:
     command: ["-c", "/etc/coturn/turnserver.conf"]
     volumes:
       - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf:ro
-      - caddy-data:/etc/coturn/caddy:ro
+      - letsencrypt:/etc/letsencrypt:ro
 
 secrets:
   postgres_password:
@@ -74,5 +108,5 @@ volumes:
   postgres-data:
   redis-data:
   media:
-  caddy-data:
-  caddy-config:
+  letsencrypt:
+  certbot-www:

@@ -13,10 +13,11 @@ Clean architecture: **Controller → Service → Repository** (architecture §3)
 
 | App | Port | What |
 |---|---|---|
-| `apps/web` | 5173 | User PWA (+ public number pages `hellogram.app/A482719K`) |
+| `apps/site` | 5176 | Landing page — `hellogram.in` (its **Sign in** button opens the web app) |
+| `apps/web` | 5173 | User PWA — `app.hellogram.in` (+ public number pages; share links are `hellogram.in/A482719K`) |
 | `apps/api` | 4000 | REST `/v1` + Socket.IO `/rt` |
 | `apps/worker` | — | Background jobs (retention sweeps, push, billing, phone changes) |
-| `apps/admin` | 5174 | Admin panel (moderation, grievances, legal requests, audit) |
+| `apps/admin` | 5174 | Admin panel — `admin.hellogram.in` (moderation, grievances, legal requests, audit) |
 | `apps/admin-api` | 4100 | Admin API (email + password + TOTP, RBAC, audit log) |
 
 ## Prerequisites
@@ -125,15 +126,18 @@ k6 run tests/load/chat.js                      # load test (staging only)
 ## Production
 
 `pnpm build` bundles each Node service with esbuild and builds the static web/admin apps.
-Docker images and a single-server Compose file are in `infra/` — see [docs/RUNBOOKS.md](docs/RUNBOOKS.md) → Deploy.
+Docker images and a single-server Compose file are in `infra/` — nginx serves `hellogram.in` (landing),
+`app.hellogram.in` (web app + API) and `admin.hellogram.in` (admin), with Let's Encrypt certificates.
+See [docs/RUNBOOKS.md](docs/RUNBOOKS.md) → Deploy.
 
 ## Layout
 
 ```
-apps/        api · worker · admin-api · web · admin
+apps/        api · worker · admin-api · web · admin · site
 packages/    shared · domain · application · infrastructure · db · ui · config
-infra/       docker-compose (dev), docker-compose.prod, Dockerfile, Caddyfile, coturn configs
+infra/       docker-compose (dev), docker-compose.prod, Dockerfile, nginx, coturn configs
 docs/        ARCHITECTURE.md · RUNBOOKS.md
+infra/nginx/ nginx.conf, site templates, init-certs.sh (first HTTPS certificate)
 tests/load/  k6 scripts
 ```
 
