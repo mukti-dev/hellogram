@@ -43,7 +43,7 @@ async function seedAccount() {
     `INSERT INTO accounts (id, phone, "ageConfirmedAt", "updatedAt") VALUES (gen_random_uuid(), '+919000000001', now(), now()) RETURNING id`,
   );
   await db.query(
-    `INSERT INTO personas (id, "accountId", code, "displayName", "updatedAt") VALUES (gen_random_uuid(), $1, 'K123457Z', 'Spammer', now())`,
+    `INSERT INTO personas (id, "accountId", code, "displayName", "labelName", "updatedAt") VALUES (gen_random_uuid(), $1, 'K123457Z', 'Spammer', 'Marketplace', now())`,
     [rows[0].id],
   );
   return rows[0].id as string;
