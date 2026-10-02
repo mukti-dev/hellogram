@@ -4,6 +4,8 @@ name: hellogram
 services:
   postgres:
     image: postgres:16-alpine
+    # Come back by themselves when Docker Desktop starts (otherwise `pnpm dev` can't connect).
+    restart: unless-stopped
     environment:
       POSTGRES_USER: hellogram
       POSTGRES_PASSWORD: hellogram
@@ -20,6 +22,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     # noeviction: BullMQ queues must never lose keys.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:

@@ -1,0 +1,28 @@
+# Build the production images on this machine instead of pulling them from GitHub's registry:
+#   docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.build.yml --env-file infra/.env.production build
+# CI builds the same images with docker-bake.hcl (one build graph, shared stages).
+x-build: &build
+  context: ..
+  dockerfile: infra/docker/Dockerfile
+
+services:
+  nginx:
+    build:
+      <<: *build
+      target: nginx
+      args:
+        VITE_APP_URL: https://${APP_DOMAIN}
+        VITE_PHONE_AUTH: ${VITE_PHONE_AUTH:-otp}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+  api:
+    build: { <<: *build, target: api }
+  worker:
+    build: { <<: *build, target: worker }
+  admin-api:
+    build: { <<: *build, target: admin-api }
+  migrate:
+    build: { <<: *build, target: migrate }

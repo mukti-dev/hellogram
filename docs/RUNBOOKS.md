@@ -15,42 +15,62 @@ Target: one AWS Lightsail instance in Mumbai (ap-south-1), Docker Compose, nginx
 | `https://admin.hellogram.in` | Admin panel (allow-listed IPs only); `/admin/v1` → admin API | nginx → `admin-api:4100` |
 | `turn.hellogram.in` | Call relay, ports 3478 / 5349 | coturn (host network) |
 
-1. **Server**: Ubuntu LTS, Docker Engine + Compose plugin. Firewall (Lightsail "Networking"): 80 and 443 TCP,
-   3478 TCP+UDP, 5349 TCP, 49152–65535 UDP (call relay).
-2. **DNS** — A records to the server's static IP: `hellogram.in`, `www.hellogram.in`, `app.hellogram.in`,
-   `admin.hellogram.in`, `turn.hellogram.in`. If you use Cloudflare, `turn` must be **DNS only** (grey cloud); the
-   others may be proxied — nginx already reads the visitor's real IP from Cloudflare (`snippets/cloudflare-realip.conf`).
-3. **Settings**: `cp infra/.env.production.example infra/.env.production` and fill every value
-   (`openssl rand -base64 48` for `JWT_ACCESS_SECRET`, `HASH_SECRET`, `ADMIN_JWT_SECRET`, `TURN_SHARED_SECRET`;
-   `openssl rand -base64 32` for `ATTACHMENT_ENCRYPTION_KEY`). Keep `TRUST_PROXY=1` (one nginx hop).
-   Put the Postgres password in `infra/secrets/postgres_password`.
-4. **Admin access**: `cp infra/nginx/admin-allowlist.conf.example infra/nginx/admin-allowlist.conf` and list your
-   office/VPN addresses (`allow …;`, ending with `deny all;`). nginx won't start without this file.
-5. **Call relay**: in `infra/coturn/turnserver.prod.conf` set `external-ip` (the server's public IP) and
-   `static-auth-secret` (= `TURN_SHARED_SECRET`).
-6. **HTTPS certificate** (first time only; renewals are automatic every 12 h check):
-   ```bash
-   sh infra/nginx/init-certs.sh
-   ```
-   One Let's Encrypt certificate named `hellogram` covers all five names; certbot copies it for coturn after each renewal.
-7. **Build, migrate, start**:
-   ```bash
-   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production build
-   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production run --rm migrate
-   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production up -d
-   ```
-   The browser apps are built inside the `nginx` image, so `VITE_*` values in `.env.production` take effect on build.
-8. **First admin**: `docker compose … exec admin-api sh -c 'ADMIN_PASSWORD=… node dist/cli/create-admin.js you@company.com admin'`.
-   Run it in a terminal on the server and scan the printed QR code (`node dist/cli/admin-qr.js <email>` shows it again).
-9. **Third-party settings**: Firebase (if used) → Authorized domains: `app.hellogram.in`. Turnstile → hostnames
-   `app.hellogram.in`. Razorpay → webhook `https://app.hellogram.in/v1/billing/webhook`.
-10. **Verify**: `https://hellogram.in` shows the landing page and **Sign in** opens `https://app.hellogram.in/login`;
-    `https://app.hellogram.in/health/ready` → `ok`; `https://hellogram.in/<a number code>` opens that number's page;
-    `https://admin.hellogram.in` works only from an allow-listed address; sign up with a real phone; place a test
-    call between two networks.
+**How deploys work**: every push to `main` runs CI (`.github/workflows/ci.yml`: lint, typecheck, unit, integration,
+browser tests). If it passes, GitHub builds the five images (`infra/docker/docker-bake.hcl`), pushes them to
+`ghcr.io/mukti-dev/hellogram/*` tagged with the commit SHA, then `deploy.yml` connects to the server over SSH, uploads
+the compose file and scripts, and runs `infra/server/deploy.sh`: pull → migrate → restart → health check. The server
+never builds anything.
 
-**Weekly**: `docker compose … restart coturn` (e.g. a Monday 04:00 cron) so the relay picks up renewed certificates
-— nginx reloads them by itself every 6 hours.
+### One-time setup
+
+1. **Lightsail instance**: Ubuntu 24.04, region Mumbai, 2 GB plan or larger. Attach a **static IP**. In
+   *Networking → IPv4 firewall* allow: SSH 22, HTTP 80, HTTPS 443, TCP+UDP 3478, TCP 5349, UDP 49152–65535.
+2. **Deploy key** (on your computer): `ssh-keygen -t ed25519 -f hellogram-deploy -C github-actions -N ""`.
+3. **Prepare the server**:
+   ```bash
+   scp infra/server/setup-ubuntu.sh ubuntu@<static-ip>:
+   ssh ubuntu@<static-ip> "sudo bash setup-ubuntu.sh \"$(cat hellogram-deploy.pub)\""
+   ```
+   Installs Docker, a `deploy` user with that key, firewall, 2 GB swap, automatic security updates, SSH keys-only,
+   log rotation, nightly database backups (`/opt/hellogram/backups`, 7 days) and the weekly call-relay restart.
+4. **DNS** — A records to the static IP: `hellogram.in`, `www`, `app`, `admin`, `turn`. With Cloudflare, `turn`
+   must be **DNS only** (grey cloud).
+5. **GitHub** → repository *Settings*:
+   - *Environments → New environment* `production` (optionally add yourself as a required reviewer to approve
+     each deploy), with **secrets**:
+     `SSH_HOST` (static IP), `SSH_USER` (`deploy`), `SSH_PRIVATE_KEY` (contents of `hellogram-deploy`),
+     `SSH_KNOWN_HOSTS` (output of `ssh-keyscan -t ed25519 <static-ip>` — pins the server's identity).
+   - *Secrets and variables → Actions → Variables*: `APP_DOMAIN` = `app.hellogram.in`; and if used,
+     `VITE_PHONE_AUTH`, `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`,
+     `VITE_FIREBASE_APP_ID`, `VITE_TURNSTILE_SITE_KEY` (public browser values, baked into the web image).
+6. **First push to `main`** — CI builds and pushes the images; the deploy uploads the config files to
+   `/opt/hellogram/infra` and stops, listing what's missing (expected the first time).
+7. **On the server** (`ssh deploy@<static-ip>`, then `cd /opt/hellogram`):
+   ```bash
+   cp infra/.env.production.example infra/.env.production    # fill every value (TURN_EXTERNAL_IP = static IP)
+   openssl rand -hex 24 > infra/secrets/postgres_password      # use the same password inside DATABASE_URL
+   cp infra/nginx/admin-allowlist.conf.example infra/nginx/admin-allowlist.conf   # your office/VPN IPs
+   sh infra/nginx/init-certs.sh                                # first HTTPS certificate (DNS must be live)
+   ```
+   Secrets: `openssl rand -base64 48` for `JWT_ACCESS_SECRET`, `HASH_SECRET`, `ADMIN_JWT_SECRET`, `TURN_SHARED_SECRET`;
+   `openssl rand -base64 32` for `ATTACHMENT_ENCRYPTION_KEY`. Keep `TRUST_PROXY=1`.
+8. **Deploy again**: *Actions → Deploy → Run workflow* with the latest commit SHA (or push any commit).
+9. **First admin**: `ssh deploy@<static-ip>`, then
+   `cd /opt/hellogram && docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production exec admin-api sh -c 'ADMIN_PASSWORD=… node dist/cli/create-admin.js you@company.com admin'`
+   and scan the QR code it prints.
+10. **Third-party settings**: Firebase (if used) → Authorized domains: `app.hellogram.in`. Turnstile → hostname
+    `app.hellogram.in`. Razorpay → webhook `https://app.hellogram.in/v1/billing/webhook`.
+11. **Verify**: `https://hellogram.in` → landing page, **Sign in** opens the app; `https://hellogram.in/<code>` opens
+    a number; `https://admin.hellogram.in` only from an allow-listed IP; sign up with a real phone; test call
+    between two networks.
+
+### Everyday
+- **Deploy**: merge or push to `main`. Pull requests run the same checks and build the images without deploying.
+- **Roll back**: *Actions → Deploy → Run workflow* → the commit SHA of an earlier successful run (images are
+  kept in GitHub's registry; the server keeps ~10 days locally).
+- **Logs**: `docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production logs -f api`.
+- **Build images by hand** (no CI): `docker buildx bake -f infra/docker/docker-bake.hcl`, or add
+  `-f infra/docker-compose.build.yml` to the compose command and run `build`.
 
 The API **refuses to start** in production with `OTP_BYPASS=true`, the dev payment simulator, console SMS/email,
 a loosened rate-limit multiplier, missing Turnstile secret, `TRUST_PROXY=false`, or default secrets.

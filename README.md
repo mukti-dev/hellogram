@@ -128,7 +128,8 @@ k6 run tests/load/chat.js                      # load test (staging only)
 `pnpm build` bundles each Node service with esbuild and builds the static web/admin apps.
 Docker images and a single-server Compose file are in `infra/` — nginx serves `hellogram.in` (landing),
 `app.hellogram.in` (web app + API) and `admin.hellogram.in` (admin), with Let's Encrypt certificates.
-See [docs/RUNBOOKS.md](docs/RUNBOOKS.md) → Deploy.
+Pushes to `main` are tested, built into images and deployed to the Lightsail server by GitHub Actions
+(`.github/workflows/ci.yml` → `deploy.yml`). See [docs/RUNBOOKS.md](docs/RUNBOOKS.md) → Deploy for the one-time setup.
 
 ## Layout
 

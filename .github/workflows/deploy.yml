@@ -1,0 +1,113 @@
+name: Deploy
+
+# Ships already-built images to the Lightsail server. Runs automatically after CI passes on main
+# (called from ci.yml), or by hand to roll back: Actions → Deploy → Run workflow → an earlier commit SHA.
+on:
+  workflow_call:
+    inputs:
+      image_tag:
+        description: Image tag to deploy (a commit SHA)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to deploy — a full commit SHA from an earlier successful CI run (or "latest")
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+# One deploy at a time; never cancel a deploy half-way.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Lightsail
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://${{ vars.APP_DOMAIN || 'app.hellogram.in' }}
+    env:
+      IMAGE_TAG: ${{ inputs.image_tag }}
+    steps:
+      - name: Check deploy settings
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          for name in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Add these secrets to the 'production' environment (Settings → Environments):$missing"
+            exit 1
+          fi
+          if ! [[ "$IMAGE_TAG" =~ ^([0-9a-f]{40}|latest)$ ]]; then
+            echo "::error::image_tag must be a full commit SHA or 'latest' (got '$IMAGE_TAG')"
+            exit 1
+          fi
+
+      # The server's compose file and scripts must match the images being deployed.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.image_tag != 'latest' && inputs.image_tag || github.sha }}
+
+      - name: SSH key and pinned host key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload compose file and server scripts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          # Only files from the repo — the server's own settings, secrets and allowlist are never touched.
+          rsync -az --relative -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
+            infra/docker-compose.prod.yml \
+            infra/.env.production.example \
+            infra/coturn/turnserver.prod.conf \
+            infra/nginx/init-certs.sh \
+            infra/nginx/certbot-hooks/ \
+            infra/nginx/admin-allowlist.conf.example \
+            infra/server/ \
+            "$SSH_USER@$SSH_HOST:/opt/hellogram/"
+
+      - name: Pull images, migrate, restart, health check
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          # The short-lived registry token goes over stdin, never on a command line.
+          printf '%s\n' "$REGISTRY_TOKEN" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" \
+            "IMAGE_TAG='$IMAGE_TAG' GHCR_USER='${{ github.actor }}' bash /opt/hellogram/infra/server/deploy.sh"
+
+      - name: Public check
+        run: |
+          app="https://${{ vars.APP_DOMAIN || 'app.hellogram.in' }}"
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 10 "$app/health/ready" >/dev/null; then echo "$app is up"; exit 0; fi
+            sleep 3
+          done
+          echo "::error::$app/health/ready did not answer from the internet (DNS, firewall or certificate?)"
+          exit 1
+
+      - name: Remove the key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

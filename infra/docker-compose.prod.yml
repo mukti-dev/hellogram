@@ -1,5 +1,8 @@
-# Single-server production (e.g. AWS Lightsail 4 GB, Mumbai). docs/RUNBOOKS.md → "Deploy".
-#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production up -d --build
+# Single-server production (AWS Lightsail, Ubuntu 24.04). docs/RUNBOOKS.md → "Deploy".
+# Runs ready-made images from GitHub's registry (built by .github/workflows/ci.yml); the server never builds.
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production pull
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production up -d
+# To build the images on a machine instead, add  -f infra/docker-compose.build.yml  (see that file).
 name: hellogram-prod
 
 x-app: &app
@@ -12,18 +15,7 @@ x-app: &app
 services:
   # hellogram.in (landing) · app.hellogram.in (web app + API) · admin.hellogram.in (admin panel).
   nginx:
-    build:
-      context: ..
-      dockerfile: infra/docker/Dockerfile
-      target: nginx
-      args:
-        VITE_APP_URL: https://${APP_DOMAIN}
-        VITE_PHONE_AUTH: ${VITE_PHONE_AUTH:-otp}
-        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
-        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
-        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
-        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
-        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+    image: ${IMAGE_REGISTRY}/nginx:${IMAGE_TAG:-latest}
     restart: unless-stopped
     # Only the domain names — the web server never needs the app's secrets.
     environment:
@@ -54,21 +46,21 @@ services:
 
   api:
     <<: *app
-    build: { context: .., dockerfile: infra/docker/Dockerfile, target: api }
+    image: ${IMAGE_REGISTRY}/api:${IMAGE_TAG:-latest}
     environment: { MEDIA_DIR: /data/media, HOST: 0.0.0.0 }
     volumes: [media:/data/media]
 
   worker:
     <<: *app
-    build: { context: .., dockerfile: infra/docker/Dockerfile, target: worker }
+    image: ${IMAGE_REGISTRY}/worker:${IMAGE_TAG:-latest}
 
   admin-api:
     <<: *app
-    build: { context: .., dockerfile: infra/docker/Dockerfile, target: admin-api }
+    image: ${IMAGE_REGISTRY}/admin-api:${IMAGE_TAG:-latest}
     environment: { HOST: 0.0.0.0 }
 
   migrate:
-    build: { context: .., dockerfile: infra/docker/Dockerfile, target: migrate }
+    image: ${IMAGE_REGISTRY}/migrate:${IMAGE_TAG:-latest}
     env_file: .env.production
     depends_on: { postgres: { condition: service_healthy } }
     profiles: [tools]
@@ -95,7 +87,13 @@ services:
     image: coturn/coturn:4.18-alpine
     restart: unless-stopped
     network_mode: host
-    command: ["-c", "/etc/coturn/turnserver.conf"]
+    # Server-specific values come from .env.production, so the config file needs no edits.
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --external-ip=${TURN_EXTERNAL_IP}
+      - --static-auth-secret=${TURN_SHARED_SECRET}
+      - --realm=${SITE_DOMAIN}
     volumes:
       - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf:ro
       - letsencrypt:/etc/letsencrypt:ro
