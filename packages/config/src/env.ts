@@ -11,6 +11,7 @@ export class EnvValidationError extends Error {
 /**
  * Loads `.env` (if present) and validates `process.env` against a Zod schema.
  * Fails fast at boot so misconfiguration never reaches runtime.
+ * An empty value (`KEY=`) counts as not set, so the settings templates can list unused keys.
  */
 export function loadEnv<S extends z.ZodType>(
   schema: S,
@@ -19,7 +20,8 @@ export function loadEnv<S extends z.ZodType>(
   if (!options.source) {
     loadDotenv({ path: options.envFile ?? '.env', quiet: true });
   }
-  const result = schema.safeParse(options.source ?? process.env);
+  const values = Object.fromEntries(Object.entries(options.source ?? process.env).filter(([, v]) => v !== ''));
+  const result = schema.safeParse(values);
   if (!result.success) {
     throw new EnvValidationError(
       result.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`),

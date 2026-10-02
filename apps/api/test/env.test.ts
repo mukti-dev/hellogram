@@ -35,6 +35,10 @@ describe('production settings', () => {
     expect(problems({})).toEqual([]);
   });
 
+  it('treat empty values as not set (the template lists keys for every provider)', () => {
+    expect(problems({ MESSAGECENTRAL_EMAIL: '', TURNSTILE_SECRET: '', SMTP_URL: '', S3_ACCESS_KEY_ID: '', S3_SECRET_ACCESS_KEY: '' })).toEqual([]);
+  });
+
   it('refuse the development stand-ins that would log codes or fake payments', () => {
     expect(problems({ EMAIL_PROVIDER: 'console' }).join()).toMatch(/EMAIL_PROVIDER/);
     expect(problems({ BILLING_PROVIDER: 'dev' }).join()).toMatch(/BILLING_PROVIDER/);
