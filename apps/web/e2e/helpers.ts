@@ -20,9 +20,10 @@ export async function fillSignup(page: Page, mobile: string, name = 'Test User')
 export async function signUpViaUi(page: Page, mobile = randomMobile(), name = 'Test User'): Promise<string> {
   await page.goto('/signup');
   await fillSignup(page, mobile, name);
-  await expect(page.getByRole('heading', { name: 'Verify your mobile number' })).toBeVisible();
+  // Sign-up hashes the password (argon2), which is slow on a busy CI machine.
+  await expect(page.getByRole('heading', { name: 'Verify your mobile number' })).toBeVisible({ timeout: 15_000 });
   await page.getByLabel('Digit 1 of 6').pressSequentially('246810');
-  await expect(page).toHaveURL(/\/numbers$/);
+  await expect(page).toHaveURL(/\/numbers$/, { timeout: 15_000 });
   return mobile;
 }
 

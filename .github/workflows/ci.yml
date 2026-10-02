@@ -80,7 +80,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '${{ env.NODE_VERSION }}', cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: sudo apt-get update -q && sudo apt-get install -y -q coturn
+      # Ubuntu starts its own coturn (default settings, no shared secret) on port 3478 as soon as it is
+      # installed: stop it, or the browsers reach that one, get refused, and calls never connect.
+      - name: Install coturn
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q coturn
+          sudo systemctl disable --now coturn || true
       - run: pnpm db:generate && pnpm --filter @hellogram/db migrate:deploy
         env: { DATABASE_URL: 'postgresql://hellogram:hellogram@localhost:5433/hellogram' }
       # The example settings are test-safe: codes are printed, never sent (the tests refuse otherwise).
@@ -94,6 +99,9 @@ jobs:
       - name: Start TURN, API and web
         run: |
           turnserver -c infra/coturn/turnserver.local.conf > turn.log 2>&1 &
+          # Fail here, with the relay's log, if it could not start (rather than as a call timeout later).
+          for i in $(seq 1 20); do ss -lntu | grep -q '127.0.0.1:3478' && break; sleep 0.5; done
+          ss -lntu | grep -q '127.0.0.1:3478' || { cat turn.log; echo '::error::TURN relay did not start'; exit 1; }
           pnpm --filter @hellogram/api dev > api.log 2>&1 &
           pnpm --filter @hellogram/web dev > web.log 2>&1 &
           npx --yes wait-on --timeout 120000 http://localhost:4000/health/live http://localhost:5173
