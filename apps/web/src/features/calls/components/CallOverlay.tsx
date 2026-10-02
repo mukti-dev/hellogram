@@ -1,10 +1,12 @@
 import { Avatar, cn } from '@hellogram/ui';
 import { NumberLabel } from '../../numbers/components/NumberLabel.js';
-import { Mic, MicOff, Phone, PhoneOff, ShieldCheck } from 'lucide-react';
+import { Mic, MicOff, Phone, PhoneOff, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNow } from '../../../shared/use-now.js';
 import { t } from '../../../i18n/t.js';
 
 import { useCallStore } from '../model/call-store.js';
+import { AudioPanel } from './AudioPanel.js';
 
 function useTimer(startedAt: number | null) {
   const now = useNow(1000);
@@ -38,6 +40,19 @@ function RoundButton({ label, onClick, tone, children }: { label: string; onClic
 export function CallOverlay() {
   const s = useCallStore();
   const timer = useTimer(s.startedAt);
+  const inCall = s.phase === 'outgoing' || s.phase === 'connecting' || s.phase === 'active';
+  // Opened for one call: it closes by itself when that call ends (and with Escape).
+  const [audioFor, setAudioFor] = useState<string | null>(null);
+  const audioOpen = inCall && audioFor !== null && audioFor === s.callId;
+  const setAudioOpen = (open: boolean) => setAudioFor(open ? s.callId : null);
+
+  useEffect(() => {
+    if (!audioOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setAudioFor(null);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [audioOpen]);
+
   if (s.phase === 'idle' || !s.party) return null;
 
   const status =
@@ -89,10 +104,13 @@ export function CallOverlay() {
             </RoundButton>
           </div>
         )}
-        {(s.phase === 'outgoing' || s.phase === 'connecting' || s.phase === 'active') && (
+        {inCall && (
           <div className="flex w-full justify-around">
             <RoundButton label={s.muted ? t('calls.unmute') : t('calls.mute')} tone="glass" onClick={s.toggleMute}>
               {s.muted ? <MicOff className="size-7" aria-hidden /> : <Mic className="size-7" aria-hidden />}
+            </RoundButton>
+            <RoundButton label={t('calls.audio')} tone="glass" onClick={() => setAudioOpen(true)}>
+              <SlidersHorizontal className="size-7" aria-hidden />
             </RoundButton>
             <RoundButton label={t('calls.end')} tone="red" onClick={() => void s.hangUp()}>
               <PhoneOff className="size-8" aria-hidden />
@@ -104,6 +122,7 @@ export function CallOverlay() {
           {t('calls.hidden')}
         </p>
       </div>
+      {audioOpen && <AudioPanel onClose={() => setAudioOpen(false)} />}
     </div>
   );
 }

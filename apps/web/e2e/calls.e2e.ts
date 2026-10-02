@@ -63,6 +63,31 @@ test('two browsers call each other through the TURN relay', async ({ browser }) 
     expect(relayed).toBe('relay');
   }
 
+  // Audio panel: noise cancellation (RNNoise) is on and really running, and switching it keeps audio flowing.
+  // (Packets, not bytes: RNNoise removes the fake microphone's beeps, and silence packs very small.)
+  const packetsSent = () =>
+    visitor.evaluate(async () => {
+      const pc = ((window as unknown as { __hgPeers?: RTCPeerConnection[] }).__hgPeers ?? []).find((p) => p.connectionState === 'connected');
+      let sent = 0;
+      for (const s of (await pc?.getStats())?.values() ?? []) if (s.type === 'outbound-rtp') sent += s.packetsSent as number;
+      return sent;
+    });
+  await visitor.getByRole('button', { name: 'Audio' }).click();
+  const panel = visitor.getByRole('dialog', { name: 'Audio' });
+  const noiseSwitch = panel.getByRole('switch', { name: 'Noise cancellation' });
+  await expect(noiseSwitch).toBeChecked();
+  await expect(panel.getByText(/Filters out traffic/)).toBeVisible();
+  await expect(panel.getByRole('radio', { name: 'System default' }).first()).toBeChecked();
+  await noiseSwitch.click();
+  await expect(noiseSwitch).not.toBeChecked();
+  await noiseSwitch.click();
+  await expect(noiseSwitch).toBeChecked();
+  await expect(panel.getByText(/Filters out traffic/)).toBeVisible();
+  const before = await packetsSent();
+  await expect.poll(packetsSent, { timeout: 5000 }).toBeGreaterThan(before + 50);
+  await panel.getByRole('button', { name: 'Close audio settings' }).click();
+  await expect(panel).toBeHidden();
+
   await visitor.getByRole('button', { name: 'End call' }).click();
   await expect(owner.getByText('Call ended')).toBeVisible();
 

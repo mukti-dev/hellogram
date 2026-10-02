@@ -9,12 +9,28 @@ export interface IceServerConfig {
   credential: string;
 }
 
+import { cancelNoise, noiseCancellationSupported, type ProcessedMic } from './noise-suppression.js';
+
 export type SignalKind = 'offer' | 'answer' | 'ice';
 export type EngineState = 'new' | 'connecting' | 'connected' | 'failed' | 'closed';
 
+export interface AudioSettings {
+  /** Microphone deviceId; null = the system default. */
+  micId: string | null;
+  /** Output deviceId (where supported); null = the system default. */
+  speakerId: string | null;
+  /** RNNoise on top of the browser's own noise suppression. */
+  noiseCancellation: boolean;
+}
+
 export class CallEngine {
   private readonly pc: RTCPeerConnection;
-  private localStream: MediaStream | null = null;
+  /** The raw microphone. */
+  private mic: MediaStreamTrack | null = null;
+  /** The noise-cancelled copy of it, when on. */
+  private processed: ProcessedMic | null = null;
+  private sender: RTCRtpSender | null = null;
+  private muted = false;
   private readonly audio: HTMLAudioElement;
   private pendingIce: RTCIceCandidateInit[] = [];
 
@@ -45,12 +61,68 @@ export class CallEngine {
   }
 
   /** Asks for the microphone. Throws if the user denies it. */
-  async openMicrophone(): Promise<void> {
-    this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false,
-    });
-    for (const track of this.localStream.getTracks()) this.pc.addTrack(track, this.localStream);
+  async openMicrophone(settings: AudioSettings): Promise<void> {
+    this.mic = await this.captureMic(settings.micId);
+    const track = await this.outgoing(settings.noiseCancellation);
+    this.sender = this.pc.addTrack(track, new MediaStream([track]));
+    await this.setSpeaker(settings.speakerId);
+  }
+
+  /** Switches microphone mid-call (e.g. to a headset) without renegotiating. */
+  async setMicrophone(micId: string | null, noiseCancellation: boolean): Promise<void> {
+    const next = await this.captureMic(micId);
+    const old = this.mic;
+    this.mic = next;
+    await this.replaceOutgoing(noiseCancellation);
+    old?.stop();
+  }
+
+  async setNoiseCancellation(on: boolean): Promise<void> {
+    if (this.mic) await this.replaceOutgoing(on);
+  }
+
+  /** Where the other person's voice plays. Ignored where the browser can't choose. */
+  async setSpeaker(speakerId: string | null): Promise<void> {
+    const audio = this.audio as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+    if (!audio.setSinkId) return;
+    await audio.setSinkId(speakerId ?? '').catch(() => undefined);
+  }
+
+  /** Whether RNNoise is actually running (it falls back silently where unsupported). */
+  get noiseCancellationActive(): boolean {
+    return this.processed !== null;
+  }
+
+  private async captureMic(micId: string | null): Promise<MediaStreamTrack> {
+    const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
+    const ask = (constraints: MediaTrackConstraints) => navigator.mediaDevices.getUserMedia({ audio: constraints, video: false });
+    // A remembered headset may be gone: fall back to the default microphone.
+    const stream = await (micId ? ask({ ...audio, deviceId: { exact: micId } }).catch(() => ask(audio)) : ask(audio));
+    const [track] = stream.getAudioTracks();
+    if (!track) throw new DOMException('No microphone', 'NotFoundError');
+    track.enabled = !this.muted;
+    return track;
+  }
+
+  /** The track to send: the microphone, or its noise-cancelled copy. */
+  private async outgoing(noiseCancellation: boolean): Promise<MediaStreamTrack> {
+    this.processed?.dispose();
+    this.processed = null;
+    const mic = this.mic!;
+    if (noiseCancellation && noiseCancellationSupported()) {
+      this.processed = await cancelNoise(mic).catch(() => null);
+    }
+    const track = this.processed?.track ?? mic;
+    track.enabled = !this.muted;
+    return track;
+  }
+
+  private async replaceOutgoing(noiseCancellation: boolean): Promise<void> {
+    const previous = this.processed;
+    this.processed = null; // keep the old graph alive until the new track is swapped in
+    const track = await this.outgoing(noiseCancellation);
+    await this.sender?.replaceTrack(track);
+    previous?.dispose();
   }
 
   /** Caller side, once the callee accepted. */
@@ -78,11 +150,16 @@ export class CallEngine {
   }
 
   setMuted(muted: boolean): void {
-    for (const track of this.localStream?.getAudioTracks() ?? []) track.enabled = !muted;
+    this.muted = muted;
+    if (this.mic) this.mic.enabled = !muted;
+    if (this.processed) this.processed.track.enabled = !muted;
   }
 
   close(): void {
-    for (const track of this.localStream?.getTracks() ?? []) track.stop();
+    this.processed?.dispose();
+    this.processed = null;
+    this.mic?.stop();
+    this.mic = null;
     this.pc.close();
     this.audio.srcObject = null;
   }

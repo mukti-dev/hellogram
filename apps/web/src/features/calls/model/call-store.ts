@@ -4,6 +4,7 @@ import { ApiError } from '../../../core/http/api-error.js';
 import { getSocket } from '../../../core/realtime/socket.js';
 import { CallEngine, type IceServerConfig, type SignalKind } from '../../../core/webrtc/call-engine.js';
 import { callsApi } from '../api/calls.api.js';
+import { useAudioPrefs } from './audio-devices.js';
 
 export interface CallParty {
   name: string;
@@ -24,6 +25,8 @@ interface CallState {
   locked: boolean;
   startedAt: number | null;
   muted: boolean;
+  /** RNNoise is running (false while off, or where the browser can't run it). */
+  noiseCancellationActive: boolean;
   endedLabel: string | null;
   error: string | null;
   startOutgoing: (conversationId: string, party: CallParty) => Promise<void>;
@@ -32,6 +35,9 @@ interface CallState {
   decline: () => Promise<void>;
   hangUp: () => Promise<void>;
   toggleMute: () => void;
+  selectMicrophone: (id: string | null) => Promise<void>;
+  selectSpeaker: (id: string | null) => Promise<void>;
+  setNoiseCancellation: (on: boolean) => Promise<void>;
   onRemoteEnded: (callId: string, reason: string) => void;
   onAccepted: (callId: string) => void;
   onSignal: (signal: CallSignal) => void;
@@ -64,6 +70,7 @@ const IDLE = {
   locked: false,
   startedAt: null,
   muted: false,
+  noiseCancellationActive: false,
   endedLabel: null,
   error: null,
 };
@@ -98,7 +105,9 @@ export const useCallStore = create<CallState>()((set, get) => {
         finish('Call failed');
       }
     });
-    await engine.openMicrophone();
+    const { micId, speakerId, noiseCancellation } = useAudioPrefs.getState();
+    await engine.openMicrophone({ micId, speakerId, noiseCancellation });
+    set({ noiseCancellationActive: engine.noiseCancellationActive });
     for (const s of queuedSignals.filter((q) => q.callId === callId)) await engine.handleSignal(s.kind, s.data);
     queuedSignals = [];
   };
@@ -173,6 +182,23 @@ export const useCallStore = create<CallState>()((set, get) => {
       const muted = !get().muted;
       engine?.setMuted(muted);
       set({ muted });
+    },
+
+    async selectMicrophone(id) {
+      useAudioPrefs.getState().setMic(id);
+      await engine?.setMicrophone(id, useAudioPrefs.getState().noiseCancellation);
+      if (engine) set({ noiseCancellationActive: engine.noiseCancellationActive });
+    },
+
+    async selectSpeaker(id) {
+      useAudioPrefs.getState().setSpeaker(id);
+      await engine?.setSpeaker(id);
+    },
+
+    async setNoiseCancellation(on) {
+      useAudioPrefs.getState().setNoiseCancellation(on);
+      await engine?.setNoiseCancellation(on);
+      if (engine) set({ noiseCancellationActive: engine.noiseCancellationActive });
     },
 
     onAccepted(callId) {

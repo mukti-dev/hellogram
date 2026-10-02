@@ -92,6 +92,9 @@ services:
       - -c
       - /etc/coturn/turnserver.conf
       - --external-ip=${TURN_EXTERNAL_IP}
+      # Relay only on the server's own network address. Left to itself, coturn also relays on Docker's
+      # bridges (172.17/172.18) and IPv6, which the other side can't reach — calls then break up or drop.
+      - --relay-ip=${TURN_RELAY_IP:?set TURN_RELAY_IP (the server's private IP) in infra/.env.production}
       - --static-auth-secret=${TURN_SHARED_SECRET}
       - --realm=${SITE_DOMAIN}
     volumes:
