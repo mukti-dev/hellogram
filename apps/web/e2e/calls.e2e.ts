@@ -95,3 +95,41 @@ test('two browsers call each other through the TURN relay', async ({ browser }) 
   await expect(owner.getByText('Answered')).toBeVisible();
   await close();
 });
+
+/**
+ * One-way audio regression: when the answering side's microphone is slow to open (noise filter
+ * loading, a permission prompt), the caller's offer must wait for it — both sides must hear audio.
+ */
+for (const slow of ['callee', 'caller'] as const) {
+test(`audio flows both ways even when the ${slow}'s microphone is slow to open`, async ({ browser }) => {
+  const { owner, visitor, close } = await pair(browser);
+  await (slow === 'callee' ? owner : visitor).addInitScript(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return original(constraints);
+    };
+  });
+  await owner.reload();
+  await visitor.goto('/inbox');
+  await visitor.getByRole('link', { name: /Rahul Deals/ }).click();
+  await visitor.getByRole('button', { name: 'Voice call' }).first().click();
+  // Answer at once — before a slow caller's microphone is ready.
+  await owner.getByRole('button', { name: 'Accept' }).click();
+  await expect(visitor.getByText(/^\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
+  await expect(owner.getByText(/^\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
+
+  const packetsReceived = (page: typeof owner) =>
+    page.evaluate(async () => {
+      const pc = ((window as unknown as { __hgPeers?: RTCPeerConnection[] }).__hgPeers ?? []).find((p) => p.connectionState === 'connected');
+      let received = 0;
+      for (const s of (await pc?.getStats())?.values() ?? []) if (s.type === 'inbound-rtp') received += s.packetsReceived as number;
+      return received;
+    });
+  await expect.poll(() => packetsReceived(visitor), { timeout: 8000, message: 'caller hears the callee' }).toBeGreaterThan(50);
+  await expect.poll(() => packetsReceived(owner), { timeout: 8000, message: 'callee hears the caller' }).toBeGreaterThan(50);
+
+  await visitor.getByRole('button', { name: 'End call' }).click();
+  await close();
+});
+}

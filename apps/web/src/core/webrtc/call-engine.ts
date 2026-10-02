@@ -31,6 +31,7 @@ export class CallEngine {
   private processed: ProcessedMic | null = null;
   private sender: RTCRtpSender | null = null;
   private muted = false;
+  private closed = false;
   private readonly audio: HTMLAudioElement;
   private pendingIce: RTCIceCandidateInit[] = [];
 
@@ -64,6 +65,11 @@ export class CallEngine {
   async openMicrophone(settings: AudioSettings): Promise<void> {
     this.mic = await this.captureMic(settings.micId);
     const track = await this.outgoing(settings.noiseCancellation);
+    if (this.closed) {
+      // Hung up while the microphone was opening: don't leave it on.
+      this.releaseMic();
+      throw new DOMException('Call ended', 'AbortError');
+    }
     this.sender = this.pc.addTrack(track, new MediaStream([track]));
     await this.setSpeaker(settings.speakerId);
   }
@@ -91,6 +97,13 @@ export class CallEngine {
   /** Whether RNNoise is actually running (it falls back silently where unsupported). */
   get noiseCancellationActive(): boolean {
     return this.processed !== null;
+  }
+
+  private releaseMic(): void {
+    this.processed?.dispose();
+    this.processed = null;
+    this.mic?.stop();
+    this.mic = null;
   }
 
   private async captureMic(micId: string | null): Promise<MediaStreamTrack> {
@@ -156,10 +169,8 @@ export class CallEngine {
   }
 
   close(): void {
-    this.processed?.dispose();
-    this.processed = null;
-    this.mic?.stop();
-    this.mic = null;
+    this.closed = true;
+    this.releaseMic();
     this.pc.close();
     this.audio.srcObject = null;
   }
