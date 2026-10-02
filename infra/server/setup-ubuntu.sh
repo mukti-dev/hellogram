@@ -107,7 +107,7 @@ Server ready. Next (docs/RUNBOOKS.md §1):
      to $APP_DIR/infra and then stops, listing what's still missing.
   2. As the deploy user (sudo -iu $DEPLOY_USER), in $APP_DIR:
        cp infra/.env.production.example infra/.env.production   # fill every value
-       openssl rand -base64 32 > infra/secrets/postgres_password   # same password in DATABASE_URL
+       openssl rand -hex 24 > infra/secrets/postgres_password      # same password in DATABASE_URL
        cp infra/nginx/admin-allowlist.conf.example infra/nginx/admin-allowlist.conf   # your IPs
        sh infra/nginx/init-certs.sh                                # first HTTPS certificate
   3. Re-run the deploy (GitHub → Actions → Deploy → Run workflow, or push again).

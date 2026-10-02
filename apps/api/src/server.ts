@@ -13,6 +13,9 @@ async function main(): Promise<void> {
   setRateLimitMultiplier(env.RATE_LIMIT_MULTIPLIER);
   const logger = createLogger(env);
   const container = createContainer(env, logger);
+  if (env.NODE_ENV === 'production' && !env.TURNSTILE_SECRET) {
+    logger.warn('TURNSTILE_SECRET is not set: sign-up, login and grievance forms have no bot check');
+  }
   const app = await buildApp({ container, corsOrigins: env.CORS_ORIGINS, logger });
 
   if (container.redis) {

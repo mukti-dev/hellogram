@@ -12,6 +12,8 @@ packages/db/src/generated/
 .env
 .env.*
 !.env.example
+# Production settings template (placeholders only; the filled-in infra/.env.production stays ignored).
+!infra/.env.production.example
 # Landing-site build settings: only the public app URL, no secrets.
 !apps/site/.env
 !apps/site/.env.production
