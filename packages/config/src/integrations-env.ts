@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 /** Billing + push settings shared by the API and the worker. */
 export const integrationsEnvSchema = z.object({
-  BILLING_PROVIDER: z.enum(['dev', 'razorpay']).default('dev'),
+  /** "none" = no payments yet: extra numbers can't be bought (free ones work). */
+  BILLING_PROVIDER: z.enum(['dev', 'razorpay', 'none']).default('dev'),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
@@ -20,7 +21,7 @@ export function checkIntegrations(env: IntegrationsEnv & { NODE_ENV: string }, a
       if (!env[key]) addIssue(key, 'required when BILLING_PROVIDER=razorpay');
     }
   }
-  if (env.NODE_ENV === 'production' && env.BILLING_PROVIDER !== 'razorpay') {
-    addIssue('BILLING_PROVIDER', 'must be razorpay in production');
+  if (env.NODE_ENV === 'production' && env.BILLING_PROVIDER === 'dev') {
+    addIssue('BILLING_PROVIDER', 'must be razorpay (or none) in production');
   }
 }

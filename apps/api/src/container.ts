@@ -23,10 +23,12 @@ import { createPrismaClient } from '@hellogram/db';
 import { systemClock, type AuthRepositories, type BlobStore, type HostedSmsVerification, type PendingDeviceLogin, type PendingSignup, type PhoneIdentityVerifier } from '@hellogram/domain';
 import {
   ConsoleEmailProvider,
+  DisabledEmailProvider,
   ConsoleSmsProvider,
   Argon2PasswordHasher,
   Argon2PinHasher,
   DevBillingProvider,
+  DisabledBillingProvider,
   FirebaseIdTokenVerifier,
   NoSmsProvider,
   NotificationQueue,
@@ -180,7 +182,12 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
           logger.child({ component: 'messagecentral' }),
         )
         : null);
-  const email = env.EMAIL_PROVIDER === 'smtp' ? new SmtpEmailProvider(env.SMTP_URL ?? '', env.EMAIL_FROM) : new ConsoleEmailProvider(providerLog);
+  const email =
+    env.EMAIL_PROVIDER === 'smtp'
+      ? new SmtpEmailProvider(env.SMTP_URL ?? '', env.EMAIL_FROM)
+      : env.EMAIL_PROVIDER === 'none'
+        ? new DisabledEmailProvider()
+        : new ConsoleEmailProvider(providerLog);
 
   const repos = authRepos(prisma);
   if (env.OTP_BYPASS) logger.warn('OTP_BYPASS is ON — any 6-digit code is accepted (testing only)');
@@ -322,7 +329,9 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
             webhookSecret: env.RAZORPAY_WEBHOOK_SECRET ?? '',
             planId: env.RAZORPAY_PLAN_ID ?? '',
           })
-        : new DevBillingProvider(),
+        : env.BILLING_PROVIDER === 'none'
+          ? new DisabledBillingProvider()
+          : new DevBillingProvider(),
     personas,
     personaService,
     events,

@@ -30,7 +30,7 @@ export interface NewPersonaInput {
 
 export interface CheckoutInfo {
   draftId: string;
-  provider: 'razorpay' | 'dev';
+  provider: 'razorpay' | 'dev' | 'none';
   /** Provider-specific data the client needs to open the payment sheet. */
   payload: Record<string, unknown>;
 }

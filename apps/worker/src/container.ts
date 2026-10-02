@@ -23,6 +23,7 @@ import {
   PrismaGrievanceRepository,
   PrismaOtpChallengeRepository,
   DevBillingProvider,
+  DisabledBillingProvider,
   LocalDiskStorage,
   LocalEventPublisher,
   NodeCryptoService,
@@ -85,7 +86,9 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
             webhookSecret: env.RAZORPAY_WEBHOOK_SECRET ?? '',
             planId: env.RAZORPAY_PLAN_ID ?? '',
           })
-        : new DevBillingProvider(),
+        : env.BILLING_PROVIDER === 'none'
+          ? new DisabledBillingProvider()
+          : new DevBillingProvider(),
     personas,
     personaService,
     events,

@@ -47,7 +47,8 @@ export type BillingEvent =
   | { kind: 'cancelled'; eventId: string; providerSubId: string };
 
 export interface BillingProvider {
-  readonly name: 'razorpay' | 'dev';
+  /** "none": payments not set up yet; every purchase is refused. */
+  readonly name: 'razorpay' | 'dev' | 'none';
   /** New subscription for `quantity` paid numbers. Returns what the client needs to pay. */
   createSubscription(input: { accountRef: string; quantity: number }): Promise<{ providerSubId: string; checkout: Record<string, unknown> }>;
   updateQuantity(providerSubId: string, quantity: number): Promise<void>;

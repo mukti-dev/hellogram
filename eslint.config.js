@@ -16,7 +16,7 @@ const FRAMEWORK_IMPORTS = [
 ];
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', 'apps/web/public/**', '**/node_modules/**', '**/generated/**', '**/dev-dist/**', '**/.turbo/**'] },
+  { ignores: ['**/dist/**', 'apps/web/public/**', '**/node_modules/**', '**/generated/**', '**/dev-dist/**', '**/.turbo/**', '.claude/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -55,7 +55,8 @@ export const apiEnvSchema = baseEnvSchema
     MSG91_AUTH_KEY: z.string().optional(),
     MSG91_OTP_TEMPLATE_ID: z.string().optional(),
     MSG91_NOTICE_TEMPLATE_ID: z.string().optional(),
-    EMAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
+    /** "none" = no SMTP yet: adding an email address in the profile is refused. */
+    EMAIL_PROVIDER: z.enum(['console', 'smtp', 'none']).default('console'),
     SMTP_URL: z.string().optional(),
     EMAIL_FROM: z.string().default('Hellogram <no-reply@hellogram.app>'),
     /** Bot check before sign-up, login, password reset and grievances. Off when unset (a warning is logged). */
@@ -88,7 +89,7 @@ export const apiEnvSchema = baseEnvSchema
       if (env.PHONE_AUTH_PROVIDER === 'otp' && !['msg91', 'fast2sms', 'messagecentral', 'twofactor'].includes(env.SMS_PROVIDER)) {
         ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'must be twofactor, messagecentral, msg91 or fast2sms when PHONE_AUTH_PROVIDER=otp' });
       }
-      if (env.EMAIL_PROVIDER !== 'smtp') ctx.addIssue({ code: 'custom', path: ['EMAIL_PROVIDER'], message: 'must be smtp in production' });
+      if (env.EMAIL_PROVIDER === 'console') ctx.addIssue({ code: 'custom', path: ['EMAIL_PROVIDER'], message: 'console logs codes — use smtp (or none) in production' });
       if (env.TRUST_PROXY === false) ctx.addIssue({ code: 'custom', path: ['TRUST_PROXY'], message: 'set to the proxy hop count or CIDRs in production' });
     }
     if (env.SMS_PROVIDER === 'msg91' && !(env.MSG91_AUTH_KEY && env.MSG91_OTP_TEMPLATE_ID && env.MSG91_NOTICE_TEMPLATE_ID)) {
