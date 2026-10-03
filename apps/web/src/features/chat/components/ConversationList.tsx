@@ -1,11 +1,12 @@
 import { FilterChip } from '@hellogram/ui';
-import { Lock, MessageSquareText, Search, X } from 'lucide-react';
+import { Lock, MessageSquareText, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../../app/layouts/PageHeader.js';
 import { t } from '../../../i18n/t.js';
 
 import { useNumbers } from '../../numbers/model/queries.js';
 import { openUnlock } from '../../pin/model/unlock-ui.js';
+import { NewRequestDialog } from '../../requests/components/NewRequestDialog.js';
 import { RequestsBanner } from '../../requests/components/RequestsBanner.js';
 import type { InboxFilter } from '../api/chat.api.js';
 import { useInbox } from '../model/queries.js';
@@ -27,6 +28,7 @@ export function ConversationList() {
   const [unread, setUnread] = useState(false);
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState('');
+  const [newRequest, setNewRequest] = useState(false);
   const query = useDebounced(q.trim(), 250);
   const filter: InboxFilter = { label, unread, q: query || undefined };
   const inbox = useInbox(filter);
@@ -46,7 +48,7 @@ export function ConversationList() {
   const locked = inbox.data?.pages[0]?.locked ?? [];
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <div className="flex items-center justify-between px-4 pt-5 pb-3">
         <h1 className="text-2xl font-bold tracking-tight">{t('inbox.title')}</h1>
         <button
@@ -101,7 +103,8 @@ export function ConversationList() {
         <RequestsBanner />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-24 lg:pb-4">
+      {/* Bottom padding keeps the last chat clear of the tab bar and the + button. */}
+      <div className="flex-1 overflow-y-auto px-2 pb-40 lg:pb-24">
         {locked.map((n) => (
           <button
             key={n.personaId}
@@ -142,6 +145,17 @@ export function ConversationList() {
           )
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={() => setNewRequest(true)}
+        aria-label={t('requests.newRequest')}
+        title={t('requests.newRequest')}
+        className="fixed right-4 bottom-[calc(4rem+env(safe-area-inset-bottom)+1rem)] z-30 inline-flex size-14 items-center justify-center rounded-full bg-gradient-primary text-white shadow-[0_8px_24px_-8px_rgba(139,92,246,0.6)] transition hover:brightness-110 active:scale-95 lg:absolute lg:bottom-6"
+      >
+        <Plus className="size-7" aria-hidden />
+      </button>
+      <NewRequestDialog open={newRequest} onOpenChange={setNewRequest} />
     </div>
   );
 }
