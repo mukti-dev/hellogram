@@ -133,3 +133,61 @@ test(`audio flows both ways even when the ${slow}'s microphone is slow to open`,
   await close();
 });
 }
+
+/** Tapping Accept on the incoming-call notification opens Hellogram at /inbox?call=…&answer=1. */
+test('Accept from the notification answers the call in a freshly opened window', async ({ browser }) => {
+  const { owner, visitor, close } = await pair(browser);
+  await visitor.goto('/inbox');
+  await visitor.getByRole('link', { name: /Rahul Deals/ }).click();
+  const started = visitor.waitForResponse((r) => r.url().endsWith('/v1/calls') && r.request().method() === 'POST');
+  await visitor.getByRole('button', { name: 'Voice call' }).first().click();
+  const { callId } = (await (await started).json()) as { callId: string };
+  await expect(owner.getByText('Incoming voice call')).toBeVisible();
+
+  // The notification opens a new window of the same signed-in app.
+  const fromNotification = await owner.context().newPage();
+  await fromNotification.goto(`/inbox?call=${callId}&answer=1`);
+  await expect(fromNotification).toHaveURL(/\/inbox$/);
+  await expect(fromNotification.getByText(/^\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
+  await expect(visitor.getByText(/^\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
+  // The window that was ringing stops: the call was answered elsewhere.
+  await expect(owner.getByText('Incoming voice call')).toBeHidden();
+
+  await visitor.getByRole('button', { name: 'End call' }).click();
+  await expect(fromNotification.getByText('Call ended')).toBeVisible();
+
+  // A notification tapped after the call ended opens the inbox and nothing rings.
+  await fromNotification.goto(`/inbox?call=${callId}`);
+  await expect(fromNotification).toHaveURL(/\/inbox$/);
+  await expect(fromNotification.getByText('Incoming voice call')).toBeHidden();
+  await close();
+});
+
+/** With Hellogram already open (in the background), the notification's buttons act in that window. */
+for (const action of ['accept', 'decline'] as const) {
+  test(`${action === 'accept' ? 'Accept' : 'Decline'} on the notification works in the window that's already open`, async ({ browser }) => {
+    const { owner, visitor, close } = await pair(browser);
+    await visitor.goto('/inbox');
+    await visitor.getByRole('link', { name: /Rahul Deals/ }).click();
+    const started = visitor.waitForResponse((r) => r.url().endsWith('/v1/calls') && r.request().method() === 'POST');
+    await visitor.getByRole('button', { name: 'Voice call' }).first().click();
+    const { callId } = (await (await started).json()) as { callId: string };
+    await expect(owner.getByText('Incoming voice call')).toBeVisible();
+
+    // What the service worker sends the open window when a notification button is pressed.
+    await owner.evaluate(
+      ({ callId, action }) =>
+        navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'hg-call', callId, action } })),
+      { callId, action },
+    );
+    if (action === 'accept') {
+      await expect(owner.getByText(/^\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
+      await expect(visitor.getByText(/^\d\d:\d\d$/)).toBeVisible({ timeout: 20_000 });
+      await visitor.getByRole('button', { name: 'End call' }).click();
+    } else {
+      await expect(owner.getByText('Incoming voice call')).toBeHidden();
+      await expect(visitor.getByText('No answer')).toBeVisible();
+    }
+    await close();
+  });
+}

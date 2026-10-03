@@ -34,13 +34,14 @@ export const callLogEntrySchema = z.object({
 });
 export type CallLogEntryDto = z.infer<typeof callLogEntrySchema>;
 
-/** Socket payload for an incoming call. `caller` is null for PIN-locked numbers (rule 27). */
-export interface IncomingCallEvent {
-  callId: string;
-  conversationId: string;
-  caller: { id: string; code: string; displayName: string; avatarUrl: string | null } | null;
-  to: { personaId: string; code: string; labelIcon: string; labelName: string };
-}
+/** An incoming call (socket event, or GET /calls/:id). `caller` is null for PIN-locked numbers (rule 27). */
+export const incomingCallSchema = z.object({
+  callId: z.uuid(),
+  conversationId: z.uuid(),
+  caller: z.object({ id: z.uuid(), code: z.string(), displayName: z.string(), avatarUrl: z.string().nullable() }).nullable(),
+  to: z.object({ personaId: z.uuid(), code: z.string(), labelIcon: z.string(), labelName: z.string() }),
+});
+export type IncomingCallEvent = z.infer<typeof incomingCallSchema>;
 
 export type CallSignal =
   | { callId: string; kind: 'offer' | 'answer'; data: { type: string; sdp: string } }

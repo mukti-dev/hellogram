@@ -1,4 +1,4 @@
-import type { CallLogEntryDto, CallStartDto } from '@hellogram/shared';
+import type { CallLogEntryDto, CallStartDto, IncomingCallEvent } from '@hellogram/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectedPair } from './fixtures.js';
 import { createHarness, type Harness, type User } from './harness.js';
@@ -115,5 +115,69 @@ describe('voice calls (rules 29–32)', () => {
     const stranger = await h.signUp();
     expect((await stranger.request({ method: 'POST', url: `/v1/calls/${body.callId}/accept` })).status).toBe(404);
     expect((await stranger.request({ method: 'POST', url: `/v1/calls/${body.callId}/end` })).status).toBe(404);
+  });
+});
+
+describe('incoming-call notifications', () => {
+  /** What the push notifications are built from (the push itself goes through the worker queue). */
+  const captured = { incoming: [] as Record<string, unknown>[], ended: [] as Record<string, unknown>[] };
+  beforeAll(() => {
+    h.container.events.subscribe('call.incoming', async (e) => void captured.incoming.push(e.payload as Record<string, unknown>));
+    h.container.events.subscribe('call.ended', async (e) => void captured.ended.push(e.payload as Record<string, unknown>));
+  });
+  const tokenFor = (callId: string) => captured.incoming.find((p) => p.callId === callId)?.declineToken as string;
+  const endedFor = (callId: string) => captured.ended.find((p) => p.callId === callId);
+  const declineFromNotification = (callId: string, token: string) =>
+    h.app.inject({ method: 'POST', url: `/v1/calls/${callId}/decline-from-notification`, payload: { token } });
+
+  it('a device opened from the notification can fetch the ringing call — only the callee, only while ringing', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const { body } = await start(visitor, conversationId);
+    const ringing = await owner.request<IncomingCallEvent>({ method: 'GET', url: `/v1/calls/${body.callId}` });
+    expect(ringing.status).toBe(200);
+    expect(ringing.body).toMatchObject({ callId: body.callId, conversationId, caller: { displayName: 'Amit Kumar' } });
+    expect((await visitor.request({ method: 'GET', url: `/v1/calls/${body.callId}` })).status).toBe(404);
+    expect((await (await h.signUp()).request({ method: 'GET', url: `/v1/calls/${body.callId}` })).status).toBe(404);
+    await visitor.request({ method: 'POST', url: `/v1/calls/${body.callId}/end` });
+    expect((await owner.request({ method: 'GET', url: `/v1/calls/${body.callId}` })).status).toBe(404);
+  });
+
+  it('the notification’s Decline works without a session, but only with that call’s key', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const a = (await start(visitor, conversationId)).body;
+    const token = tokenFor(a.callId);
+    expect(token).toBeTruthy();
+
+    // A wrong key, or another call's key, changes nothing — and looks the same (204).
+    expect((await declineFromNotification(a.callId, 'x'.repeat(43))).statusCode).toBe(204);
+    expect(await row(a.callId)).toMatchObject({ status: 'ringing' });
+
+    expect((await declineFromNotification(a.callId, token)).statusCode).toBe(204);
+    expect(await row(a.callId)).toMatchObject({ status: 'declined', endReason: 'declined' });
+    expect((await log(visitor))[0]?.outcome).toBe('no_answer');
+    expect((await log(owner))[0]?.outcome).toBe('declined');
+    expect(endedFor(a.callId)).toMatchObject({ missed: false });
+
+    // Replaying the key on a finished call does nothing.
+    expect((await declineFromNotification(a.callId, token)).statusCode).toBe(204);
+    const b = (await start(visitor, conversationId)).body;
+    expect((await declineFromNotification(b.callId, token)).statusCode).toBe(204);
+    expect(await row(b.callId)).toMatchObject({ status: 'ringing' });
+  });
+
+  it('the ringing notification becomes "Missed call" only when the callee never answered', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const cancelled = (await start(visitor, conversationId)).body;
+    await visitor.request({ method: 'POST', url: `/v1/calls/${cancelled.callId}/end` });
+    expect(endedFor(cancelled.callId)).toMatchObject({ missed: true });
+
+    const answered = (await start(visitor, conversationId)).body;
+    await owner.request({ method: 'POST', url: `/v1/calls/${answered.callId}/accept` });
+    await owner.request({ method: 'POST', url: `/v1/calls/${answered.callId}/end` });
+    expect(endedFor(answered.callId)).toMatchObject({ missed: false });
+
+    const declined = (await start(visitor, conversationId)).body;
+    await owner.request({ method: 'POST', url: `/v1/calls/${declined.callId}/decline` });
+    expect(endedFor(declined.callId)).toMatchObject({ missed: false });
   });
 });

@@ -27,6 +27,14 @@ export function registerPushBridge(rt: Namespace | null, events: LocalEventPubli
     safely(async () => deliver(await triggers.forRequest(event.payload as { personaId: string }))),
   );
   events.subscribe('call.incoming', (event) =>
-    safely(async () => deliver(triggers.forCall(event.payload as { callee: Persona; caller: Persona; calleeLocked: boolean }))),
+    safely(async () =>
+      deliver(triggers.forCall(event.payload as { callId: string; callee: Persona; caller: Persona; calleeLocked: boolean; declineToken?: string })),
+    ),
   );
+  type CallEvent = { callId: string; callerPersonaId: string; calleePersonaId: string; suppressed: boolean; missed?: boolean };
+  // The ringing notification on the callee's other devices goes away (or becomes "Missed call").
+  events.subscribe('call.accepted', (event) =>
+    safely(async () => deliver(await triggers.forCallEnded({ ...(event.payload as CallEvent), answered: true }))),
+  );
+  events.subscribe('call.ended', (event) => safely(async () => deliver(await triggers.forCallEnded(event.payload as CallEvent))));
 }

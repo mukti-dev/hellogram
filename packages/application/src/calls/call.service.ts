@@ -13,6 +13,7 @@ import {
   type CallTimeoutScheduler,
   type CallWithParties,
   type Clock,
+  type CryptoService,
   type EventPublisher,
   type IceServer,
   type Persona,
@@ -34,6 +35,8 @@ export interface CallDeps {
   turn: TurnCredentialIssuer;
   events: EventPublisher;
   clock: Clock;
+  /** Signs the Decline key carried by the incoming-call notification (absent in the worker). */
+  crypto?: CryptoService;
   /** Set after construction (the scheduler calls back into this service). */
   timeouts?: CallTimeoutScheduler;
 }
@@ -104,6 +107,7 @@ export class CallService {
           calleeLocked: view.otherPersona.hasPin,
           caller: view.myPersona,
           callee: view.otherPersona,
+          declineToken: this.declineToken(call.id),
         },
         occurredAt: this.deps.clock.now(),
       });
@@ -132,8 +136,30 @@ export class CallService {
   async decline(actor: Actor, callId: string): Promise<void> {
     const call = await this.party(actor, callId, 'callee');
     if (await this.deps.calls.transition(call.id, ['ringing'], { status: 'declined', endReason: 'declined', endedAt: this.deps.clock.now() })) {
-      await this.finish(call, 'no_answer');
+      await this.finish(call, 'no_answer', false);
     }
+  }
+
+  /**
+   * Decline from the notification's button, where there is no session: the key in the push
+   * proves it came from the callee's notification, and it can only refuse this ringing call.
+   * Wrong keys and unknown calls are ignored silently (no oracle).
+   */
+  async declineFromNotification(callId: string, token: string): Promise<void> {
+    const expected = this.declineToken(callId);
+    if (!expected || !this.deps.crypto?.safeEqual(expected, token)) return;
+    const call = await this.deps.calls.findWithParties(callId);
+    if (!call) return;
+    if (await this.deps.calls.transition(call.id, ['ringing'], { status: 'declined', endReason: 'declined', endedAt: this.deps.clock.now() })) {
+      await this.finish(call, 'no_answer', false);
+    }
+  }
+
+  /** A call still ringing for me, for a device opened from the notification. */
+  async ringing(actor: Actor, callId: string): Promise<{ call: CallWithParties; calleeLocked: boolean }> {
+    const call = await this.party(actor, callId, 'callee');
+    if (call.status !== 'ringing' || call.suppressed) throw new DomainError(ErrorCode.NOT_FOUND, 'This call has ended');
+    return { call, calleeLocked: call.callee.hasPin };
   }
 
   /** Either side hangs up. Caller hanging up while ringing = cancelled (callee sees missed). */
@@ -141,10 +167,10 @@ export class CallService {
     const call = await this.party(actor, callId, 'either');
     const now = this.deps.clock.now();
     if (await this.deps.calls.transition(call.id, ['answered'], { status: 'ended', endReason: 'completed', endedAt: now })) {
-      return this.finish(call, 'completed');
+      return this.finish(call, 'completed', false);
     }
     if (await this.deps.calls.transition(call.id, ['ringing'], { status: 'missed', endReason: 'cancelled', endedAt: now })) {
-      return this.finish(call, 'cancelled');
+      return this.finish(call, 'cancelled', true);
     }
   }
 
@@ -154,7 +180,7 @@ export class CallService {
     if (!call) return;
     const reason = call.suppressed ? 'suppressed' : 'no_answer';
     if (await this.deps.calls.transition(call.id, ['ringing'], { status: 'missed', endReason: reason, endedAt: this.deps.clock.now() })) {
-      await this.finish(call, 'no_answer');
+      await this.finish(call, 'no_answer', !call.suppressed);
     }
   }
 
@@ -195,7 +221,8 @@ export class CallService {
     return stale.length;
   }
 
-  private async finish(call: Call, reason: 'completed' | 'no_answer' | 'cancelled') {
+  /** `missed`: the callee never picked up or declined (their notification becomes "Missed call"). */
+  private async finish(call: Call, reason: 'completed' | 'no_answer' | 'cancelled', missed: boolean) {
     this.deps.timeouts?.cancel(call.id);
     const [caller, callee] = await Promise.all([
       this.deps.personas.findById(call.callerPersonaId),
@@ -203,7 +230,11 @@ export class CallService {
     ]);
     if (caller) await this.deps.lock.release(caller.accountId, call.id);
     if (callee) await this.deps.lock.release(callee.accountId, call.id);
-    await this.publish('call.ended', call, { reason });
+    await this.publish('call.ended', call, { reason, missed });
+  }
+
+  private declineToken(callId: string): string | undefined {
+    return this.deps.crypto?.hmac('call', `decline:${callId}`);
   }
 
   private publish(type: 'call.accepted' | 'call.ended', call: Call, extra: Record<string, unknown>) {

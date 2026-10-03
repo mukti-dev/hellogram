@@ -19,7 +19,7 @@ import { MeController } from './modules/me/me.controller.js';
 import { billingRoutes, billingWebhookRoute } from './modules/billing/billing.routes.js';
 import { blockRoutes } from './modules/blocks/block.routes.js';
 import { pushRoutes } from './modules/push/push.routes.js';
-import { callRoutes } from './modules/calls/call.routes.js';
+import { callNotificationRoutes, callRoutes } from './modules/calls/call.routes.js';
 import { AttachmentController } from './modules/attachments/attachment.controller.js';
 import { attachmentRoutes } from './modules/attachments/attachment.routes.js';
 import { ChatController } from './modules/chat/chat.controller.js';
@@ -94,6 +94,7 @@ export async function buildApp({ container, corsOrigins, logger }: BuildAppOptio
       await v1.register(safetyRoutes(container.safetyService));
       await v1.register(pinRoutes(container.pinService));
       await v1.register(callRoutes(container.callService, container.avatarUrl));
+      await v1.register(callNotificationRoutes(container.callService));
       await v1.register(billingRoutes(container.billingService, container.billingDevTools));
       await v1.register(billingWebhookRoute(container.billingService));
       await v1.register(pushRoutes(container.notificationService, container.vapidPublicKey));

@@ -119,7 +119,7 @@ export interface EmailProvider {
 /** Cryptographic helpers, implemented with node:crypto in infrastructure. */
 export interface CryptoService {
   /** Keyed hash for lookups (targets, IPs, refresh tokens, OTP codes). */
-  hmac(purpose: 'target' | 'ip' | 'refresh' | 'otp' | 'device', value: string): string;
+  hmac(purpose: 'target' | 'ip' | 'refresh' | 'otp' | 'device' | 'call', value: string): string;
   randomToken(bytes?: number): string;
   randomDigits(length: number): string;
   /** Uniform random integer in [0, max). */

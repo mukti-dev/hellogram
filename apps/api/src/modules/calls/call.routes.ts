@@ -1,5 +1,5 @@
 import type { CallService } from '@hellogram/application';
-import { callAcceptSchema, callLogEntrySchema, callStartSchema } from '@hellogram/shared';
+import { callAcceptSchema, callLogEntrySchema, callStartSchema, incomingCallSchema } from '@hellogram/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import { actorOf } from '../../plugins/auth.js';
@@ -25,6 +25,19 @@ export const callRoutes =
     app.post('/calls/:id/accept', { schema: { params, response: { 200: callAcceptSchema } } }, async (request) =>
       calls.accept(actorOf(request), request.params.id),
     );
+
+    // A device opened from the incoming-call notification asks what's ringing.
+    app.get('/calls/:id', { schema: { params, response: { 200: incomingCallSchema } } }, async (request) => {
+      const { call, calleeLocked } = await calls.ringing(actorOf(request), request.params.id);
+      return {
+        callId: call.id,
+        conversationId: call.conversationId,
+        caller: calleeLocked
+          ? null
+          : { id: call.caller.id, code: call.caller.code, displayName: call.caller.displayName, avatarUrl: avatarUrl(call.caller.avatarKey) },
+        to: { personaId: call.callee.id, code: call.callee.code, labelIcon: call.callee.labelIcon, labelName: call.callee.labelName },
+      };
+    });
 
     app.post('/calls/:id/decline', { schema: { params } }, async (request, reply) => {
       await calls.decline(actorOf(request), request.params.id);
@@ -62,6 +75,26 @@ export const callRoutes =
           })),
           nextCursor: page.nextCursor,
         };
+      },
+    );
+  };
+
+/**
+ * The notification's Decline button (in the service worker, which has no session). Authorised by
+ * the one-call key that came in the push; always 204 so it reveals nothing.
+ */
+export const callNotificationRoutes =
+  (calls: CallService): FastifyPluginAsyncZod =>
+  async (app) => {
+    app.post(
+      '/calls/:id/decline-from-notification',
+      {
+        config: { rateLimit: { max: limit(20), timeWindow: '1 minute' } },
+        schema: { params, body: z.object({ token: z.string().min(16).max(128) }) },
+      },
+      async (request, reply) => {
+        await calls.declineFromNotification(request.params.id, request.body.token);
+        return reply.status(204).send();
       },
     );
   };

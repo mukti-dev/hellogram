@@ -1,19 +1,12 @@
-import type { CallSignal, ConversationDto, IncomingCallEvent } from '@hellogram/shared';
+import type { CallSignal, IncomingCallEvent } from '@hellogram/shared';
 import { onRealtime } from '../../../core/realtime/handlers.js';
-import { chatKeys } from '../../chat/model/keys.js';
+import './call-notifications.js';
 import './call-sounds.js';
 import { useCallStore } from './call-store.js';
+import { partyFor } from './party.js';
 
 onRealtime('call:incoming', (client) => (event: IncomingCallEvent) => {
-  // My private nickname for this chat, if I set one.
-  const conversation = client.getQueryData<ConversationDto>(chatKeys.one(event.conversationId));
-  useCallStore.getState().receiveIncoming(event, {
-    name: event.caller ? (conversation?.nickname ?? event.caller.displayName) : 'Incoming call',
-    avatarUrl: event.caller?.avatarUrl ?? null,
-    labelIcon: event.to.labelIcon,
-    labelName: event.to.labelName,
-    code: event.to.code,
-  });
+  useCallStore.getState().receiveIncoming(event, partyFor(client, event));
   void client.invalidateQueries({ queryKey: ['calls'] });
 });
 

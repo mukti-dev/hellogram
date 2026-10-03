@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router';
 import { CheckoutDialog } from '../../features/billing/CheckoutDialog.js';
 import { CallOverlay } from '../../features/calls/components/CallOverlay.js';
+import { useCallNotificationActions } from '../../features/calls/model/call-notifications.js';
 import { UnlockScreen } from '../../features/pin/components/UnlockScreen.js';
 import { startUnlockExpiry } from '../../features/pin/model/unlock-tokens.js';
 import { BottomTabs } from './BottomTabs.js';
@@ -20,6 +21,7 @@ export function AppShell() {
   const inChat = /^\/inbox\/(?!requests)[^/]+/.test(path);
   const client = useQueryClient();
   useEffect(() => startUnlockExpiry(() => void client.invalidateQueries()), [client]);
+  useCallNotificationActions();
   return (
     <div className="flex h-dvh overflow-hidden bg-bg text-fg">
       <Sidebar />

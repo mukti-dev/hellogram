@@ -317,6 +317,7 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     turn: new CoturnCredentialIssuer(env.TURN_URLS, env.TURN_SHARED_SECRET),
     events,
     clock,
+    crypto,
   });
   callService.setTimeouts(new InProcessCallTimeouts((callId) => callService.timeout(callId)));
   const billingService = new BillingService({

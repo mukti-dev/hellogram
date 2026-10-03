@@ -12,7 +12,7 @@ export class WebPushSender implements PushSender {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         JSON.stringify(payload),
-        { TTL: 60 * 60, urgency: 'high' },
+        { TTL: payload.ttlSeconds ?? 60 * 60, urgency: 'high' },
       );
       return 'ok';
     } catch (error) {

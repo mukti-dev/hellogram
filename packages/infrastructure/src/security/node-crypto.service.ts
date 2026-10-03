@@ -11,14 +11,14 @@ export class NodeCryptoService implements CryptoService {
 
   constructor(secret: string) {
     this.keys = new Map(
-      (['target', 'ip', 'refresh', 'otp', 'device'] as const).map((purpose) => [
+      (['target', 'ip', 'refresh', 'otp', 'device', 'call'] as const).map((purpose) => [
         purpose,
         createHmac('sha256', secret).update(`hellogram:${purpose}`).digest(),
       ]),
     );
   }
 
-  hmac(purpose: 'target' | 'ip' | 'refresh' | 'otp' | 'device', value: string): string {
+  hmac(purpose: 'target' | 'ip' | 'refresh' | 'otp' | 'device' | 'call', value: string): string {
     const key = this.keys.get(purpose);
     if (!key) throw new Error(`Unknown hmac purpose ${purpose}`);
     return createHmac('sha256', key).update(value).digest('base64url');

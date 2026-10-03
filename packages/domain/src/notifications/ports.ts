@@ -5,6 +5,18 @@ export interface PushPayload {
   url: string;
   /** Collapses repeated notifications (e.g. one per chat). */
   tag?: string;
+  /**
+   * Call notifications: "call" rings with Accept/Decline until answered; "call_ended" and
+   * "call_answered" replace it (a missed call stays as "Missed call", the rest just clear it).
+   */
+  kind?: 'call' | 'call_ended' | 'call_answered';
+  callId?: string;
+  /** Lets the notification's Decline button refuse this one ringing call without a session. */
+  declineToken?: string;
+  /** Shown as "Missed call…" (true) or cleared quietly (false). */
+  missed?: boolean;
+  /** Drop the push if it can't be delivered in time (a call rings for 45 s). Default 1 hour. */
+  ttlSeconds?: number;
 }
 
 export interface PushSubscriptionRecord {

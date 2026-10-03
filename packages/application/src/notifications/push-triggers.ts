@@ -2,6 +2,7 @@ import {
   attachmentLabel,
   hasContent,
   isInDnd,
+  RING_SECONDS,
   type Clock,
   type ConversationRepository,
   type Message,
@@ -64,15 +65,46 @@ export class PushTriggers {
     };
   }
 
-  forCall(p: { callee: Persona; caller: Persona; calleeLocked: boolean }): PushIntent {
+  /**
+   * Sent even while the app is open: in a background tab or behind other apps the in-app call
+   * screen can't be seen, and the notification is what shows on top. The device's service worker
+   * skips it when Hellogram is already on screen.
+   */
+  forCall(p: { callId: string; callee: Persona; caller: Persona; calleeLocked: boolean; declineToken?: string }): PushIntent {
     return {
       accountId: p.callee.accountId,
-      onlyIfOffline: true,
+      onlyIfOffline: false,
       payload: {
+        kind: 'call',
+        callId: p.callId,
+        ...(p.declineToken ? { declineToken: p.declineToken } : {}),
         title: p.calleeLocked ? 'Incoming call' : `Incoming call from ${p.caller.displayName}`,
-        body: p.calleeLocked ? 'Open Hellogram to answer' : `via ${p.callee.displayName}`,
-        url: '/inbox',
-        tag: 'call',
+        body: p.calleeLocked ? 'Tap to answer in Hellogram' : `to ${p.callee.code}`,
+        url: `/inbox?call=${p.callId}`,
+        tag: `call-${p.callId}`,
+        ttlSeconds: RING_SECONDS,
+      },
+    };
+  }
+
+  /** Replaces the ringing notification: "Missed call…" if they never picked up, otherwise it just goes away. */
+  async forCallEnded(p: { callId: string; callerPersonaId: string; calleePersonaId: string; suppressed: boolean; missed?: boolean; answered?: boolean }): Promise<PushIntent | null> {
+    if (p.suppressed) return null;
+    const [callee, caller] = await Promise.all([this.deps.personas.findById(p.calleePersonaId), this.deps.personas.findById(p.callerPersonaId)]);
+    if (!callee) return null;
+    const missed = Boolean(p.missed);
+    return {
+      accountId: callee.accountId,
+      onlyIfOffline: false,
+      payload: {
+        kind: p.answered ? 'call_answered' : 'call_ended',
+        callId: p.callId,
+        missed,
+        title: missed ? (callee.hasPin || !caller ? 'Missed call' : `Missed call from ${caller.displayName}`) : 'Call ended',
+        body: missed && !callee.hasPin ? `to ${callee.code}` : '',
+        url: '/calls',
+        tag: `call-${p.callId}`,
+        ttlSeconds: missed ? 60 * 60 : 60,
       },
     };
   }
