@@ -37,6 +37,7 @@ export * from './billing/razorpay.provider.js';
 export * from './billing/dev-billing.provider.js';
 export * from './billing/disabled-billing.provider.js';
 export * from './persistence/prisma-push.repository.js';
+export * from './persistence/prisma-native-push.repository.js';
 export * from './push/web-push.sender.js';
 export * from './queue/notification-queue.js';
 export * from './persistence/prisma-account-lifecycle.repository.js';

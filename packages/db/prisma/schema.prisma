@@ -193,6 +193,7 @@ model Account {
   blocksReceived Block[]            @relation("BlocksReceived")
   subscriptions  Subscription[]
   pushSubs       PushSubscription[]
+  nativePushTokens NativePushToken[]
   actions        AccountActionLog[]
   exports        DataExport[]
   personaDrafts  PersonaDraft[]
@@ -254,6 +255,7 @@ model Session {
   revokeReason String?
   account      Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
   tokens       RefreshToken[]
+  pushTokens   NativePushToken[]
 
   @@index([accountId])
   @@map("sessions")
@@ -624,6 +626,34 @@ model PushSubscription {
 
   @@index([accountId])
   @@map("push_subscriptions")
+}
+
+/// A phone's push token (the mobile app). Tied to its session: logging out or revoking the
+/// session stops pushes to that phone. iOS has two: "voip" (PushKit, rings CallKit for calls)
+/// and "alert" (messages); Android uses one FCM token for both.
+model NativePushToken {
+  id        String         @id @default(uuid()) @db.Uuid
+  accountId String         @db.Uuid
+  sessionId String         @db.Uuid
+  platform  PushPlatform
+  kind      PushTokenKind
+  token     String         @unique
+  createdAt DateTime       @default(now()) @db.Timestamptz
+  account   Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  session   Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("native_push_tokens")
+}
+
+enum PushPlatform {
+  ios
+  android
+}
+
+enum PushTokenKind {
+  voip
+  alert
 }
 
 // ────────────────────────── Compliance / admin ───────────────────

@@ -37,3 +37,25 @@ export interface PushSender {
   /** Returns 'gone' when the browser subscription no longer exists (404/410). */
   send(subscription: PushSubscriptionRecord, payload: PushPayload): Promise<'ok' | 'gone'>;
 }
+
+/** A phone's push token (mobile app). iOS: "voip" rings CallKit, "alert" is everything else. */
+export interface NativePushTokenRecord {
+  id: string;
+  platform: 'ios' | 'android';
+  kind: 'voip' | 'alert';
+  token: string;
+}
+
+export interface NativePushTokenRepository {
+  /** A token moves to whoever registers it last (a phone can switch accounts). */
+  upsert(input: { accountId: string; sessionId: string; platform: 'ios' | 'android'; kind: 'voip' | 'alert'; token: string }): Promise<void>;
+  remove(accountId: string, token: string): Promise<void>;
+  /** Only tokens whose session is still active: a logged-out phone gets nothing. */
+  listForAccount(accountId: string, now: Date): Promise<NativePushTokenRecord[]>;
+  deleteById(id: string): Promise<void>;
+}
+
+/** APNs / FCM delivery. Returns 'gone' when the token is no longer valid. */
+export interface NativePushSender {
+  send(token: NativePushTokenRecord, payload: PushPayload): Promise<'ok' | 'gone'>;
+}

@@ -32,6 +32,7 @@ import {
   PrismaConversationRepository,
   PrismaMaintenanceRepository,
   PrismaPersonaRepository,
+  PrismaNativePushTokenRepository,
   PrismaPushSubscriptionRepository,
   PrismaReachRepository,
   QrCodeSvgRenderer,
@@ -98,10 +99,14 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
   });
   const notifications = new NotificationService({
     subscriptions: new PrismaPushSubscriptionRepository(prisma),
+    nativeTokens: new PrismaNativePushTokenRepository(prisma),
+    clock,
     sender:
       env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
         ? new WebPushSender({ subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY })
         : null,
+    // APNs / FCM senders plug in here once the credentials exist; until then phone tokens are only stored.
+    nativeSender: null,
   });
   const triggers = new PushTriggers({ personas, conversations, clock });
   const maintenance = new MaintenanceService({
