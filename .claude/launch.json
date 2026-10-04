@@ -118,6 +118,20 @@
         "--strictPort"
       ],
       "port": 5181
+    },
+    {
+      "name": "rn-metro",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "../hellogram-rn",
+        "run",
+        "start",
+        "--",
+        "--port",
+        "8090"
+      ],
+      "port": 8090
     }
   ]
 }

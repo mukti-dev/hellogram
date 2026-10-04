@@ -486,6 +486,7 @@ export const en = {
     profile: 'Profile',
     cancel: 'Cancel',
     save: 'Save',
+    done: 'Done',
     comingSoon: 'Coming soon',
     loading: 'Loading…',
     myAccount: 'My account',
