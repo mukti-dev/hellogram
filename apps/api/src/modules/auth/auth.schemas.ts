@@ -33,6 +33,9 @@ export const resetPasswordBody = withProof(z.object({ phone, password, deviceNam
 export const tokenResponse = z.object({
   accessToken: z.string(),
   expiresIn: z.number().int(),
+  /** Mobile app only (see client-tokens.ts): browsers get these as httpOnly cookies instead. */
+  refreshToken: z.string().optional(),
+  deviceToken: z.string().optional(),
 });
 
 export const loginResponse = tokenResponse;

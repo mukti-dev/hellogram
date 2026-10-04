@@ -140,4 +140,51 @@ describe('auth against Postgres + Redis', () => {
     const res = await post('/v1/auth/password/forgot', { phone: '9123456780' });
     expect(res.statusCode).toBe(429);
   });
+
+  describe('mobile app (no cookie jar)', () => {
+    const native = { 'x-hellogram-client': 'native' };
+
+    it('gets its tokens in the body, refreshes and logs out with headers, and remembers the device', async () => {
+      const start = await post('/v1/auth/signup', details, native);
+      const verify = await post('/v1/auth/signup/verify', { signupId: start.json().signupId, code: devOtps.at(-1) }, native);
+      expect(verify.statusCode).toBe(200);
+      const first = verify.json();
+      expect(first).toMatchObject({ accessToken: expect.any(String), refreshToken: expect.any(String), deviceToken: expect.any(String) });
+      expect(verify.cookies).toHaveLength(0);
+
+      // Refresh with the header; the old token is single-use, as on the web.
+      const rotated = await post('/v1/auth/refresh', undefined, { ...native, 'x-refresh-token': first.refreshToken });
+      expect(rotated.statusCode).toBe(200);
+      expect(rotated.json().refreshToken).toEqual(expect.any(String));
+      expect(rotated.json().refreshToken).not.toBe(first.refreshToken);
+      expect(rotated.cookies).toHaveLength(0);
+      expect((await post('/v1/auth/refresh', undefined, { ...native, 'x-refresh-token': first.refreshToken })).statusCode).toBe(401);
+
+      // The device token skips the code next time.
+      const sends = devOtps.length;
+      const again = await post('/v1/auth/login', { phone: '9876543210', password: 'Sunrise!42' }, { ...native, 'x-device-token': first.deviceToken });
+      expect(again.json()).toMatchObject({ status: 'ok', refreshToken: expect.any(String), deviceToken: first.deviceToken });
+      expect(devOtps).toHaveLength(sends);
+
+      const out = await post('/v1/auth/logout', undefined, { ...native, 'x-refresh-token': again.json().refreshToken });
+      expect(out.statusCode).toBe(204);
+      expect((await post('/v1/auth/refresh', undefined, { ...native, 'x-refresh-token': again.json().refreshToken })).statusCode).toBe(401);
+    });
+
+    it('never hands tokens to a web page, even if a script claims to be the app', async () => {
+      const start = await post('/v1/auth/signup', details);
+      await post('/v1/auth/signup/verify', { signupId: start.json().signupId, code: devOtps.at(-1) });
+      // Browsers always send Origin on these requests: the claim is ignored and cookies are used.
+      const fromPage = { ...native, origin: 'https://app.hellogram.in' };
+      const login = await post('/v1/auth/login', { phone: '9876543210', password: 'Sunrise!42' }, fromPage);
+      const verified = await post('/v1/auth/login/verify', { ticket: login.json().ticket, code: devOtps.at(-1) }, fromPage);
+      expect(verified.statusCode).toBe(200);
+      expect(verified.json().refreshToken).toBeUndefined();
+      expect(verified.json().deviceToken).toBeUndefined();
+      expect(verified.cookies.map((c) => c.name).sort()).toEqual(['hg_dev', 'hg_rt']);
+      // …and a refresh header from a page is not accepted either.
+      const refresh = verified.cookies.find((c) => c.name === 'hg_rt')!.value;
+      expect((await post('/v1/auth/refresh', undefined, { ...fromPage, 'x-refresh-token': refresh })).statusCode).toBe(401);
+    });
+  });
 });

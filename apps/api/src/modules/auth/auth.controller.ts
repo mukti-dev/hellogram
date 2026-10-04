@@ -13,8 +13,9 @@ import type {
   signupResendBody,
   signupVerifyBody,
 } from './auth.schemas.js';
-import { readDeviceCookie, setDeviceCookie } from './device-cookie.js';
-import { clearRefreshCookie, readRefreshCookie, setRefreshCookie, type CookieSettings } from './refresh-cookie.js';
+import { isNativeClient, readDeviceToken, readRefreshToken } from './client-tokens.js';
+import { setDeviceCookie } from './device-cookie.js';
+import { clearRefreshCookie, setRefreshCookie, type CookieSettings } from './refresh-cookie.js';
 
 type Req<TBody> = FastifyRequest<{ Body: TBody }>;
 
@@ -42,20 +43,19 @@ export class AuthController {
 
   signupVerify = async (request: Req<z.infer<typeof signupVerifyBody>>, reply: FastifyReply) => {
     const result = await this.auth.completeSignup(
-      { signupId: request.body.signupId, proof: toProof(request.body), deviceId: readDeviceCookie(request) },
+      { signupId: request.body.signupId, proof: toProof(request.body), deviceId: readDeviceToken(request) },
       clientInfo(request, request.body.deviceName),
     );
-    return this.signedIn(reply, result);
+    return reply.send(this.session(request, reply, result));
   };
 
   login = async (request: Req<z.infer<typeof loginBody>>, reply: FastifyReply) => {
     const result = await this.auth.login(
-      { phone: request.body.phone, password: request.body.password, deviceId: readDeviceCookie(request) },
+      { phone: request.body.phone, password: request.body.password, deviceId: readDeviceToken(request) },
       clientInfo(request, request.body.deviceName),
     );
     if (result.status === 'verify_device') return reply.send({ status: 'verify_device', ticket: result.ticket });
-    this.setCookies(reply, result);
-    return reply.send({ status: 'ok', accessToken: result.accessToken, expiresIn: result.expiresIn });
+    return reply.send({ status: 'ok', ...this.session(request, reply, result) });
   };
 
   loginResend = async (request: Req<z.infer<typeof loginResendBody>>, reply: FastifyReply) => {
@@ -65,10 +65,10 @@ export class AuthController {
 
   loginVerify = async (request: Req<z.infer<typeof loginVerifyBody>>, reply: FastifyReply) => {
     const result = await this.auth.verifyDevice(
-      { ticket: request.body.ticket, proof: toProof(request.body), deviceId: readDeviceCookie(request) },
+      { ticket: request.body.ticket, proof: toProof(request.body), deviceId: readDeviceToken(request) },
       clientInfo(request, request.body.deviceName),
     );
-    return this.signedIn(reply, result);
+    return reply.send(this.session(request, reply, result));
   };
 
   forgotPassword = async (request: Req<z.infer<typeof forgotPasswordBody>>, reply: FastifyReply) => {
@@ -78,37 +78,39 @@ export class AuthController {
 
   resetPassword = async (request: Req<z.infer<typeof resetPasswordBody>>, reply: FastifyReply) => {
     const result = await this.auth.resetPassword(
-      { phone: request.body.phone, password: request.body.password, proof: toProof(request.body), deviceId: readDeviceCookie(request) },
+      { phone: request.body.phone, password: request.body.password, proof: toProof(request.body), deviceId: readDeviceToken(request) },
       clientInfo(request, request.body.deviceName),
     );
-    return this.signedIn(reply, result);
+    return reply.send(this.session(request, reply, result));
   };
 
   refresh = async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const result = await this.auth.refresh(readRefreshCookie(request));
+      const result = await this.auth.refresh(readRefreshToken(request));
+      if (isNativeClient(request)) {
+        return reply.send({ accessToken: result.accessToken, expiresIn: result.expiresIn, refreshToken: result.refreshToken });
+      }
       setRefreshCookie(reply, result.refreshToken, this.cookie);
       return reply.send({ accessToken: result.accessToken, expiresIn: result.expiresIn });
     } catch (error) {
-      clearRefreshCookie(reply, this.cookie);
+      if (!isNativeClient(request)) clearRefreshCookie(reply, this.cookie);
       throw error;
     }
   };
 
   /** Logging out keeps the device remembered: next time the password is enough. */
   logout = async (request: FastifyRequest, reply: FastifyReply) => {
-    await this.auth.logout(readRefreshCookie(request));
-    clearRefreshCookie(reply, this.cookie);
+    await this.auth.logout(readRefreshToken(request));
+    if (!isNativeClient(request)) clearRefreshCookie(reply, this.cookie);
     return reply.status(204).send();
   };
 
-  private setCookies(reply: FastifyReply, result: LoginResult) {
+  /** Browsers get httpOnly cookies; the mobile app gets the tokens to keep in secure storage. */
+  private session(request: FastifyRequest, reply: FastifyReply, result: LoginResult) {
+    const tokens = { accessToken: result.accessToken, expiresIn: result.expiresIn };
+    if (isNativeClient(request)) return { ...tokens, refreshToken: result.refreshToken, deviceToken: result.deviceId };
     setRefreshCookie(reply, result.refreshToken, this.cookie);
     setDeviceCookie(reply, result.deviceId, this.cookie);
-  }
-
-  private signedIn(reply: FastifyReply, result: LoginResult) {
-    this.setCookies(reply, result);
-    return reply.send({ accessToken: result.accessToken, expiresIn: result.expiresIn });
+    return tokens;
   }
 }

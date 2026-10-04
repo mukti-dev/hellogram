@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { limit } from '../../plugins/rate-limit.js';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import type { AuthController } from './auth.controller.js';
+import { CLIENT_HEADER } from './client-tokens.js';
 import {
   forgotPasswordBody,
   loginBody,
@@ -19,11 +20,12 @@ import {
   tokenResponse,
 } from './auth.schemas.js';
 
+export { CLIENT_HEADER };
+
 /**
  * CSRF defence for cookie-authenticated endpoints: browsers can't add a custom
  * header cross-site without a CORS preflight, which our strict CORS rejects.
  */
-export const CLIENT_HEADER = 'x-hellogram-client';
 const requireClientHeader = async (request: FastifyRequest) => {
   if (!request.headers[CLIENT_HEADER]) {
     throw new DomainError(ErrorCode.FORBIDDEN, 'Missing client header');
