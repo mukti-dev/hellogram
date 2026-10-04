@@ -126,6 +126,7 @@ export const en = {
     fileTooLarge: 'Files can be up to 10 MB.',
     fileNotAllowed: 'This file type can’t be sent. You can share photos, PDF, Word, Excel, PowerPoint, ZIP and text files.',
     photo: 'Photo',
+    file: 'File',
     openPhoto: 'Open photo',
     download: 'Download',
     downloadFile: 'Download {name}',
