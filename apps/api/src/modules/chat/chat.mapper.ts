@@ -26,6 +26,7 @@ export const toAttachmentDto = (a: MessageAttachment): AttachmentDto => ({
 /** A message as seen by `viewerPersonaId`. */
 export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
   const mine = m.senderPersonaId === viewerPersonaId;
+  // Deleted and expired messages keep their content on the server for 30 days; clients never get it.
   const deleted = Boolean(m.deletedForEveryoneAt);
   let system: MessageDto['system'] = null;
   if (m.systemPayload?.kind === 'retention_changed') {
@@ -39,7 +40,7 @@ export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
     clientMessageId: mine ? m.clientMessageId : null,
     mine,
     type: m.type,
-    body: deleted ? null : m.body,
+    body: hasContent(m) ? m.body : null,
     attachment: m.attachment && hasContent(m) ? toAttachmentDto(m.attachment) : null,
     system,
     createdAt: m.createdAt.toISOString(),

@@ -5,13 +5,14 @@ import type { PrismaClient } from '@hellogram/db';
 export class PrismaMaintenanceRepository implements MaintenanceRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  /** Rule 22: body → NULL once older than the conversation's retention. */
-  purgeExpiredContent(now: Date): Promise<number> {
+  /** Rule 22: hidden from both sides once older than the conversation's retention. */
+  expireContent(now: Date): Promise<number> {
     return this.db.$executeRaw`
       UPDATE messages m
-         SET body = NULL, "contentPurgedAt" = ${now}
+         SET "expiredAt" = ${now}
         FROM conversations c
        WHERE m."conversationId" = c.id
+         AND m."expiredAt" IS NULL
          AND m."contentPurgedAt" IS NULL
          AND m.type = 'text'
          AND c.retention <> 'forever'
@@ -21,6 +22,15 @@ export class PrismaMaintenanceRepository implements MaintenanceRepository {
                WHEN 'd7'  THEN interval '7 days'
                WHEN 'h24' THEN interval '24 hours'
              END)`;
+  }
+
+  /** Soft-deleted and expired messages lose their text for good; attachments.sweep then destroys their files. */
+  eraseDeletedContent(before: Date, now: Date): Promise<number> {
+    return this.db.$executeRaw`
+      UPDATE messages
+         SET body = NULL, "contentPurgedAt" = ${now}
+       WHERE "contentPurgedAt" IS NULL
+         AND ("deletedForEveryoneAt" < ${before} OR "expiredAt" < ${before})`;
   }
 
   /** §9: message and call metadata is hard-deleted after 180 days. */

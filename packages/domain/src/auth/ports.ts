@@ -28,6 +28,8 @@ export interface AccountRepository {
   setVerifiedEmail(accountId: string, email: string, verifiedAt: Date): Promise<void>;
   setName(accountId: string, name: string): Promise<void>;
   isEmailTaken(email: string, exceptAccountId: string): Promise<boolean>;
+  /** Logging in within 30 days of asking to delete the account keeps it. */
+  cancelDeletion(accountId: string): Promise<void>;
 }
 
 export interface SessionRepository {
@@ -141,6 +143,10 @@ export interface RateLimiter {
 export interface StorageProvider {
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
+  /** Soft delete: the file stops being served at once and is kept until purgeTrash. */
+  trash(key: string): Promise<void>;
+  /** Destroys files trashed before `before`; returns how many. */
+  purgeTrash(before: Date): Promise<number>;
   publicUrl(key: string): string;
 }
 

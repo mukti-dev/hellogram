@@ -17,6 +17,7 @@ const msg = (over: Partial<Message> = {}): Message => ({
   deliveredAt: null,
   readAt: null,
   deletedForEveryoneAt: null,
+  expiredAt: null,
   contentPurgedAt: null,
   ...over,
 });

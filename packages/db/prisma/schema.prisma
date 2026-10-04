@@ -16,6 +16,8 @@ enum AccountStatus {
   active
   suspended
   banned
+  /// Deletion requested: off for everyone, restored by logging in, erased after 30 days.
+  pending_deletion
   deleted
 }
 
@@ -179,6 +181,7 @@ model Account {
   suspendedUntil  DateTime?     @db.Timestamptz
   createdAt       DateTime      @default(now()) @db.Timestamptz
   updatedAt       DateTime      @updatedAt @db.Timestamptz
+  /// When deletion was requested; the account is erased 30 days later unless the user logs in.
   deletedAt       DateTime?     @db.Timestamptz
 
   sessions       Session[]
@@ -431,7 +434,11 @@ model Message {
   createdAt            DateTime      @default(now()) @db.Timestamptz
   deliveredAt          DateTime?     @db.Timestamptz
   readAt               DateTime?     @db.Timestamptz
+  /// Soft delete: hidden from both sides at once; text and file are erased 30 days later.
   deletedForEveryoneAt DateTime?     @db.Timestamptz
+  /// Past the chat's retention: hidden from both sides; erased 30 days later.
+  expiredAt            DateTime?     @db.Timestamptz
+  /// Text set to NULL and the file destroyed for good.
   contentPurgedAt      DateTime?     @db.Timestamptz
   conversation         Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender               Persona       @relation(fields: [senderPersonaId], references: [id])
@@ -447,7 +454,7 @@ model Message {
 /// A file shared in a chat. The bytes live in object storage, encrypted by the API
 /// (AES-256-GCM, key from the environment) under a random key name.
 /// `messageId` is NULL until the upload is sent, and again once the message is gone:
-/// the worker deletes the stored object for every row without a live message.
+/// the worker deletes the stored object for unsent uploads and once the message's content is erased.
 model Attachment {
   id                String         @id @default(uuid()) @db.Uuid
   conversationId    String         @db.Uuid

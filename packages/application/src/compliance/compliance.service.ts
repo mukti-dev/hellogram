@@ -15,8 +15,9 @@ import {
   type PhoneProof,
   type RateLimiter,
   type SmsProvider,
+  type StorageProvider,
 } from '@hellogram/domain';
-import { ErrorCode } from '@hellogram/shared';
+import { ErrorCode, LIMITS } from '@hellogram/shared';
 import type { OtpVerifier } from '../auth/otp-verifier.js';
 import type { PhoneProofChecker } from '../auth/phone-proof.js';
 
@@ -34,6 +35,8 @@ export class ComplianceService {
       otp: OtpVerifier;
       proofs: PhoneProofChecker;
       sms: SmsProvider;
+      /** Profile photos, destroyed when an account is erased. */
+      storage: StorageProvider;
       crypto: CryptoService;
       limiter: RateLimiter;
       events: EventPublisher;
@@ -52,7 +55,10 @@ export class ComplianceService {
     await this.sendOtp(phone, `account_delete:${phone}`, 'account_delete', ip);
   }
 
-  /** Rule 4: irreversible. */
+  /**
+   * Rule 4: the account is switched off now and erased after SOFT_DELETE_DAYS (eraseDueAccounts).
+   * Logging in before then keeps it (AuthService).
+   */
   async deleteAccount(actor: Actor, proof: PhoneProof): Promise<void> {
     const phone = await this.phoneOf(actor);
     const verified = await this.deps.proofs.check(proof, {
@@ -62,7 +68,7 @@ export class ComplianceService {
     });
     await verified.consume();
     const now = this.deps.clock.now();
-    await this.deps.lifecycle.deleteAccount(actor.accountId, now);
+    await this.deps.lifecycle.requestDeletion(actor.accountId, now);
     await this.deps.audit.log({ actorType: 'account', actorId: actor.accountId, action: 'account.deleted' });
     await this.deps.events.publish({ type: 'account.deleted', payload: { accountId: actor.accountId }, occurredAt: now });
   }
@@ -74,6 +80,20 @@ export class ComplianceService {
     // A taken number simply never receives a code.
     if (await this.deps.lifecycle.isPhoneTaken(newPhone)) return;
     await this.sendOtp(newPhone, `phone_change:${actor.accountId}:${newPhone}`, 'phone_change', ip);
+  }
+
+  /** Worker: erases accounts whose deletion was requested more than SOFT_DELETE_DAYS ago. */
+  async eraseDueAccounts(): Promise<number> {
+    const now = this.deps.clock.now();
+    const before = new Date(now.getTime() - LIMITS.SOFT_DELETE_DAYS * 24 * HOUR);
+    let erased = 0;
+    for (const accountId of await this.deps.lifecycle.listDueErasures(before, 100)) {
+      const { avatarKeys } = await this.deps.lifecycle.eraseAccount(accountId, now);
+      for (const key of avatarKeys) await this.deps.storage.delete(key).catch(() => undefined);
+      await this.deps.audit.log({ actorType: 'system', actorId: null, action: 'account.erased', targetType: 'account', targetId: accountId });
+      erased += 1;
+    }
+    return erased;
   }
 
   /** Step 2: verified → takes effect after 24 h; the old number is told (can cancel). */

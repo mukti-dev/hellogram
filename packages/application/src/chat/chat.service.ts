@@ -9,8 +9,6 @@ import {
   normalizeMessageBody,
   normalizeNickname,
   type Actor,
-  type AttachmentRepository,
-  type BlobStore,
   type Clock,
   type ConversationRepository,
   type ConversationView,
@@ -24,12 +22,9 @@ import {
   type ReachRepository,
 } from '@hellogram/domain';
 import { ErrorCode, type Retention } from '@hellogram/shared';
-import { discardAttachment } from './attachment.service.js';
 
 export interface ChatDeps {
   conversations: ConversationRepository;
-  attachments: AttachmentRepository;
-  blobs: BlobStore;
   personas: PersonaRepository;
   reach: ReachRepository;
   events: EventPublisher;
@@ -189,12 +184,8 @@ export class ChatService {
     }
     assertCanDeleteForEveryone(message);
     if (message.deletedForEveryoneAt) return;
+    // Soft delete: gone for both sides now; text and file are erased by the worker after 30 days.
     await this.deps.conversations.deleteForEveryone(message.id, now);
-    // The file goes now, not at the next sweep (the worker is only the backstop if storage is down).
-    if (message.attachment) {
-      const attachment = await this.deps.attachments.findById(message.attachment.id);
-      if (attachment) await discardAttachment(this.deps, attachment).catch(() => undefined);
-    }
     await this.deps.events.publish({
       type: 'message.deleted',
       payload: {

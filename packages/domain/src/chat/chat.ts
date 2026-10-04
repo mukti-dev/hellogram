@@ -19,7 +19,11 @@ export interface Message {
   createdAt: Date;
   deliveredAt: Date | null;
   readAt: Date | null;
+  /** Soft-deleted: hidden from both sides; the content is erased after LIMITS.SOFT_DELETE_DAYS. */
   deletedForEveryoneAt: Date | null;
+  /** Past the chat's retention: hidden the same way. */
+  expiredAt: Date | null;
+  /** Text and file erased for good. */
   contentPurgedAt: Date | null;
 }
 
@@ -91,8 +95,8 @@ export function normalizeCaption(input: string | undefined): string | null {
 }
 
 /** True while a message's text and file may still be shown. */
-export const hasContent = (m: Pick<Message, 'deletedForEveryoneAt' | 'contentPurgedAt'>) =>
-  !m.deletedForEveryoneAt && !m.contentPurgedAt;
+export const hasContent = (m: Pick<Message, 'deletedForEveryoneAt' | 'expiredAt' | 'contentPurgedAt'>) =>
+  !m.deletedForEveryoneAt && !m.expiredAt && !m.contentPurgedAt;
 
 export function normalizeNickname(input: string | null): string | null {
   if (input === null) return null;

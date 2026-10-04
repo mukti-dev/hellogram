@@ -209,7 +209,7 @@ export class PersonaService {
     }
     const persona = await this.unlocked(actor, id);
     await this.deps.personas.retire(persona.id, this.deps.clock.now());
-    if (persona.avatarKey) await this.deps.storage.delete(persona.avatarKey).catch(() => undefined);
+    if (persona.avatarKey) await this.deps.storage.trash(persona.avatarKey).catch(() => undefined);
     await this.deps.events.publish({
       type: 'persona.retired',
       payload: { accountId: actor.accountId, personaId: persona.id, wasPaid: persona.isPaid },
@@ -236,7 +236,8 @@ export class PersonaService {
     const key = `avatars/${this.deps.crypto.randomToken(18)}.${type.ext}`;
     await this.deps.storage.put(key, body, contentType);
     const updated = await this.deps.personas.update(persona.id, { avatarKey: key });
-    if (persona.avatarKey) await this.deps.storage.delete(persona.avatarKey).catch(() => undefined);
+    // The old photo is kept out of sight for 30 days, then destroyed (maintenance.purgeTrashedFiles).
+    if (persona.avatarKey) await this.deps.storage.trash(persona.avatarKey).catch(() => undefined);
     await this.publishUpdated(updated);
     return updated;
   }
@@ -244,7 +245,7 @@ export class PersonaService {
   async removeAvatar(actor: Actor, id: string): Promise<Persona> {
     const persona = await this.unlocked(actor, id);
     const updated = await this.deps.personas.update(persona.id, { avatarKey: null });
-    if (persona.avatarKey) await this.deps.storage.delete(persona.avatarKey).catch(() => undefined);
+    if (persona.avatarKey) await this.deps.storage.trash(persona.avatarKey).catch(() => undefined);
     await this.publishUpdated(updated);
     return updated;
   }

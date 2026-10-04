@@ -18,6 +18,13 @@ const select = {
 export class PrismaAccountRepository implements AccountRepository {
   constructor(private readonly db: Db) {}
 
+  async cancelDeletion(accountId: string): Promise<void> {
+    await this.db.account.updateMany({
+      where: { id: accountId, status: 'pending_deletion' },
+      data: { status: 'active', deletedAt: null },
+    });
+  }
+
   findById(id: string): Promise<Account | null> {
     return this.db.account.findUnique({ where: { id }, select });
   }

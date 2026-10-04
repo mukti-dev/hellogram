@@ -37,6 +37,7 @@ const SUPPRESS: Decision = { kind: 'suppress' };
 
 export const isRestricted = (a: AccountSnapshot, now: Date) =>
   a.status === 'banned' ||
+  a.status === 'pending_deletion' ||
   a.status === 'deleted' ||
   (a.status === 'suspended' && (!a.suspendedUntil || a.suspendedUntil > now));
 

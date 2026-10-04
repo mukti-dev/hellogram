@@ -32,6 +32,7 @@ export class PrismaReportRepository implements ReportRepository {
         body: true,
         suppressed: true,
         deletedForEveryoneAt: true,
+        expiredAt: true,
         clientMessageId: true,
         attachment: { select: { kind: true, fileName: true, mimeType: true, sizeBytes: true } },
         sender: { select: { code: true, displayName: true } },
@@ -45,6 +46,7 @@ export class PrismaReportRepository implements ReportRepository {
       body: m.body,
       attachment: m.attachment,
       deleted: Boolean(m.deletedForEveryoneAt),
+      expired: Boolean(m.expiredAt),
       suppressed: m.suppressed,
     }));
   }

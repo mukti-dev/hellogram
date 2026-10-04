@@ -35,6 +35,8 @@ export interface EvidenceMessage {
   /** What was shared (details only — the file itself is not copied into the evidence). */
   attachment?: { kind: 'image' | 'file'; fileName: string; mimeType: string; sizeBytes: number } | null;
   deleted: boolean;
+  /** Past the chat's retention (hidden from both sides, text kept for 30 days). */
+  expired: boolean;
   suppressed: boolean;
 }
 
@@ -55,7 +57,10 @@ export interface ReportRepository {
 
 /** Scheduled clean-up jobs (§10). All return affected row counts. */
 export interface MaintenanceRepository {
-  purgeExpiredContent(now: Date): Promise<number>;
+  /** Hides messages past their chat's retention (content stays until eraseDeletedContent). */
+  expireContent(now: Date): Promise<number>;
+  /** Erases text of messages deleted for everyone or expired before `before`; their files are swept next. */
+  eraseDeletedContent(before: Date, now: Date): Promise<number>;
   purgeOldMetadata(before: Date): Promise<{ messages: number; calls: number }>;
   purgeClosedReportEvidence(before: Date): Promise<number>;
   expireRequests(now: Date): Promise<number>;

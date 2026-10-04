@@ -1,6 +1,6 @@
 import type { Gender } from '@hellogram/shared';
 
-export type AccountStatus = 'active' | 'suspended' | 'banned' | 'deleted';
+export type AccountStatus = 'active' | 'suspended' | 'banned' | 'pending_deletion' | 'deleted';
 
 export interface Account {
   id: string;
@@ -78,5 +78,6 @@ export interface ClientInfo {
 
 export const isAccountRestricted = (account: Account, now: Date): boolean =>
   account.status === 'banned' ||
+  account.status === 'pending_deletion' ||
   account.status === 'deleted' ||
   (account.status === 'suspended' && (!account.suspendedUntil || account.suspendedUntil > now));

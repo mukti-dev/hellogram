@@ -183,7 +183,7 @@ S3 never holds anything readable, and no public or pre-signed link is ever creat
    ```
 3. **Lifecycle rule** (Management → Create lifecycle rule, whole bucket): "Delete expired object delete markers or
    incomplete multipart uploads" → abort incomplete multipart uploads after **1 day**. Do **not** add an expiry rule
-   for objects: the worker deletes files when their message goes.
+   for objects: the worker deletes files 30 days after their message is deleted or expires.
 4. **IAM policy** (IAM → Policies → Create → JSON), name `hellogram-attachments-rw` — objects only, no listing:
    ```json
    {
@@ -214,7 +214,8 @@ S3 never holds anything readable, and no public or pre-signed link is ever creat
    ```
    The API and worker refuse to start in production without S3 and a non-default key.
 8. **Verify**: send a photo in a chat, then open the object in the S3 console — it must be a file with a random name
-   that starts with `HGF` and shows no image. Delete the message for everyone → the object disappears.
+   that starts with `HGF` and shows no image. Delete the message for everyone → the photo disappears from the chat at once;
+   the object itself stays for 30 days (soft delete), then the worker removes it.
 
 ### Rotating the encryption key
 Generate a new key, move the current one into `ATTACHMENT_ENCRYPTION_KEYS_OLD` (comma-separated), set the new one as

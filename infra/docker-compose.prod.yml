@@ -53,6 +53,9 @@ services:
   worker:
     <<: *app
     image: ${IMAGE_REGISTRY}/worker:${IMAGE_TAG:-latest}
+    # Same photo volume as the API: the worker destroys trashed photos after 30 days.
+    environment: { MEDIA_DIR: /data/media }
+    volumes: [media:/data/media]
 
   admin-api:
     <<: *app

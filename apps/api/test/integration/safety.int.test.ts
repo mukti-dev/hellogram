@@ -117,7 +117,9 @@ describe('reports with evidence (rules 33–34)', () => {
     // Content purge doesn't touch the snapshot.
     await h.db.query(`UPDATE conversations SET retention = 'h24'`);
     await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '2 days'`);
-    await h.container.maintenanceService.purgeExpiredContent();
+    await h.container.maintenanceService.expireContent();
+    await h.db.query(`UPDATE messages SET "expiredAt" = now() - interval '31 days'`);
+    await h.container.maintenanceService.eraseDeletedContent();
     const again = await h.db.query(`SELECT snapshot FROM report_evidence WHERE "reportId" = $1`, [res.body.id]);
     expect((again.rows[0].snapshot as { body: string }[]).at(-1)?.body).toBe('msg 54');
   });
@@ -138,14 +140,24 @@ describe('reports with evidence (rules 33–34)', () => {
 });
 
 describe('retention sweeper and metadata purge (rules 21–22, §9)', () => {
-  it('purges bodies past the chat’s retention but keeps the rows', async () => {
+  it('hides messages past the chat’s retention, then erases them 30 days later', async () => {
     const { owner, visitor, conversationId } = await connectedPair(h);
     await owner.request<ConversationDto>({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'd7' } });
     const old = await sendMessage(visitor, conversationId, 'old secret');
     const fresh = await sendMessage(visitor, conversationId, 'fresh');
     await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '8 days' WHERE id = $1`, [old.body.id]);
 
-    expect(await h.container.maintenanceService.purgeExpiredContent()).toBeGreaterThanOrEqual(1);
+    expect(await h.container.maintenanceService.expireContent()).toBeGreaterThanOrEqual(1);
+    const page = await owner.request<{ items: { id: string; body: string | null }[] }>({ method: 'GET', url: `/v1/conversations/${conversationId}/messages` });
+    expect(page.body.items.find((m) => m.id === old.body.id)?.body ?? null).toBeNull();
+    expect(JSON.stringify(page.body)).not.toContain('old secret');
+    const kept = await h.db.query(`SELECT body, "expiredAt" FROM messages WHERE id = $1`, [old.body.id]);
+    expect(kept.rows[0].body).toBe('old secret');
+    expect(kept.rows[0].expiredAt).not.toBeNull();
+
+    expect(await h.container.maintenanceService.eraseDeletedContent()).toBe(0);
+    await h.db.query(`UPDATE messages SET "expiredAt" = now() - interval '31 days' WHERE id = $1`, [old.body.id]);
+    expect(await h.container.maintenanceService.eraseDeletedContent()).toBe(1);
     const rows = await h.db.query(`SELECT id, body, "contentPurgedAt" FROM messages WHERE id = ANY($1::uuid[])`, [[old.body.id, fresh.body.id]]);
     const byId = Object.fromEntries(rows.rows.map((r) => [r.id, r]));
     expect(byId[old.body.id]).toMatchObject({ body: null });
@@ -153,13 +165,26 @@ describe('retention sweeper and metadata purge (rules 21–22, §9)', () => {
     expect(byId[fresh.body.id]).toMatchObject({ body: 'fresh', contentPurgedAt: null });
   });
 
+  it('a message deleted for everyone is gone for both sides but stays in report evidence for 30 days', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const msg = await sendMessage(visitor, conversationId, 'threatening words');
+    expect((await visitor.request({ method: 'DELETE', url: `/v1/messages/${msg.body.id}?scope=everyone` })).status).toBe(204);
+    for (const user of [owner, visitor]) {
+      const page = await user.request({ method: 'GET', url: `/v1/conversations/${conversationId}/messages` });
+      expect(JSON.stringify(page.body)).not.toContain('threatening words');
+    }
+    const res = await owner.request<{ id: string }>({ method: 'POST', url: '/v1/reports', payload: { conversationId, reason: 'harassment' } });
+    const evidence = await h.db.query(`SELECT snapshot FROM report_evidence WHERE "reportId" = $1`, [res.body.id]);
+    expect(evidence.rows[0].snapshot.at(-1)).toMatchObject({ body: 'threatening words', deleted: true });
+  });
+
   it('"forever" chats are never purged; metadata older than 180 days is hard-deleted', async () => {
     const { visitor, conversationId } = await connectedPair(h);
     await visitor.request({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'forever' } });
     const m = await sendMessage(visitor, conversationId, 'keep me');
     await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '100 days' WHERE id = $1`, [m.body.id]);
-    await h.container.maintenanceService.purgeExpiredContent();
-    expect((await h.db.query(`SELECT body FROM messages WHERE id = $1`, [m.body.id])).rows[0].body).toBe('keep me');
+    await h.container.maintenanceService.expireContent();
+    expect((await h.db.query(`SELECT "expiredAt" FROM messages WHERE id = $1`, [m.body.id])).rows[0].expiredAt).toBeNull();
 
     await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '181 days' WHERE id = $1`, [m.body.id]);
     await h.container.maintenanceService.purgeOldMetadata();

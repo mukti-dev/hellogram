@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@hellogram/db';
-import type { AccountLifecycleRepository, PhoneChangeRecord } from '@hellogram/domain';
+import { hasContent, type AccountLifecycleRepository, type PhoneChangeRecord } from '@hellogram/domain';
 import { randomUUID } from 'node:crypto';
 
 const phoneChangeSelect = { id: true, accountId: true, newPhone: true, effectiveAt: true } as const;
@@ -7,22 +7,41 @@ const phoneChangeSelect = { id: true, accountId: true, newPhone: true, effective
 export class PrismaAccountLifecycleRepository implements AccountLifecycleRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  async deleteAccount(accountId: string, at: Date): Promise<void> {
+  async requestDeletion(accountId: string, at: Date): Promise<void> {
     await this.db.$transaction(async (tx) => {
-      const personas = await tx.persona.findMany({ where: { accountId }, select: { id: true, code: true } });
+      await tx.account.update({ where: { id: accountId }, data: { status: 'pending_deletion', deletedAt: at } });
+      await tx.session.updateMany({ where: { accountId, revokedAt: null }, data: { revokedAt: at, revokeReason: 'account_deleted' } });
+      await tx.pushSubscription.deleteMany({ where: { accountId } });
+    });
+  }
+
+  async listDueErasures(before: Date, limit: number): Promise<string[]> {
+    const rows = await this.db.account.findMany({
+      where: { status: 'pending_deletion', deletedAt: { lt: before } },
+      select: { id: true },
+      orderBy: { deletedAt: 'asc' },
+      take: limit,
+    });
+    return rows.map((r) => r.id);
+  }
+
+  async eraseAccount(accountId: string, at: Date): Promise<{ avatarKeys: string[] }> {
+    return this.db.$transaction(async (tx) => {
+      const personas = await tx.persona.findMany({ where: { accountId }, select: { id: true, code: true, avatarKey: true } });
       const ids = personas.map((p) => p.id);
       for (const p of personas) {
         await tx.retiredCode.upsert({ where: { code: p.code }, create: { code: p.code }, update: {} });
       }
       await tx.persona.updateMany({
         where: { accountId, status: { not: 'retired' } },
-        data: { status: 'retired', retiredAt: at, pinHash: null, avatarKey: null, pauseReason: null },
+        data: { status: 'retired', retiredAt: at, pinHash: null, pauseReason: null },
       });
+      await tx.persona.updateMany({ where: { accountId }, data: { avatarKey: null } });
       await tx.conversation.updateMany({
         where: { closedAt: null, OR: [{ personaAId: { in: ids } }, { personaBId: { in: ids } }] },
         data: { closedAt: at },
       });
-      // Content purge: the user's own messages lose their text; metadata follows the 180-day rule.
+      // Content erased: the user's own messages lose their text (files are swept next); metadata follows the 180-day rule.
       await tx.message.updateMany({
         where: { senderPersonaId: { in: ids }, contentPurgedAt: null },
         data: { body: null, contentPurgedAt: at },
@@ -38,8 +57,9 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
       // Anonymise: the phone/email are freed for a future sign-up and no longer stored.
       await tx.account.update({
         where: { id: accountId },
-        data: { status: 'deleted', deletedAt: at, phone: `deleted:${randomUUID()}`, name: null, email: null, emailVerifiedAt: null },
+        data: { status: 'deleted', phone: `deleted:${randomUUID()}`, name: null, email: null, emailVerifiedAt: null },
       });
+      return { avatarKeys: personas.flatMap((p) => (p.avatarKey ? [p.avatarKey] : [])) };
     });
   }
 
@@ -91,7 +111,7 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
         },
         orderBy: { createdAt: 'asc' },
         select: {
-          createdAt: true, type: true, body: true, senderPersonaId: true, deletedForEveryoneAt: true, contentPurgedAt: true,
+          createdAt: true, type: true, body: true, senderPersonaId: true, deletedForEveryoneAt: true, expiredAt: true, contentPurgedAt: true,
           attachment: { select: { fileName: true, mimeType: true, sizeBytes: true } },
         },
       });
@@ -105,9 +125,9 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
           at: x.createdAt,
           fromMe: x.senderPersonaId === m.personaId,
           type: x.type,
-          body: x.deletedForEveryoneAt ? null : x.body,
+          body: hasContent(x) ? x.body : null,
           // File details only; the files themselves are downloaded from the chat.
-          ...(x.attachment && !x.deletedForEveryoneAt && !x.contentPurgedAt ? { attachment: x.attachment } : {}),
+          ...(x.attachment && hasContent(x) ? { attachment: x.attachment } : {}),
         })),
       });
     }

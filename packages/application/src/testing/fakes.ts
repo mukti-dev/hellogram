@@ -81,6 +81,10 @@ export class FakeAccounts implements AccountRepository {
   };
   isEmailTaken = async (email: string, exceptAccountId: string) =>
     this.rows.some((a) => a.email === email && a.id !== exceptAccountId);
+  cancelDeletion = async (accountId: string) => {
+    const a = this.rows.find((r) => r.id === accountId);
+    if (a?.status === 'pending_deletion') a.status = 'active';
+  };
 }
 
 export class FakeSessions implements SessionRepository {
@@ -285,6 +289,8 @@ export class FakePersonas implements PersonaRepository {
 export const fakeStorage: StorageProvider = {
   put: async () => {},
   delete: async () => {},
+  trash: async () => {},
+  purgeTrash: async () => 0,
   publicUrl: (key) => `/media/${key}`,
 };
 

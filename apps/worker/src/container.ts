@@ -54,7 +54,8 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
   const reach = new PrismaReachRepository(prisma);
   const attachments = new PrismaAttachmentRepository(prisma);
   const { blobs } = createAttachmentStorage(env);
-  const chat = new ChatService({ conversations, attachments, blobs, personas, reach, events, clock, limiter });
+  const chat = new ChatService({ conversations, personas, reach, events, clock, limiter });
+  const mediaStorage = new LocalDiskStorage(env.MEDIA_DIR, '/media');
   const calls = new CallService({
     calls: new PrismaCallRepository(prisma),
     personas,
@@ -71,7 +72,7 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
     crypto: new NodeCryptoService('worker-unused-secret-0123456789abcdef'),
     clock,
     events,
-    storage: new LocalDiskStorage('.data/media', '/media'),
+    storage: mediaStorage,
     qr: new QrCodeSvgRenderer(),
     publicBaseUrl: env.PUBLIC_BASE_URL,
     codeDigits: env.CODE_DIGITS,
@@ -103,10 +104,16 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
         : null,
   });
   const triggers = new PushTriggers({ personas, conversations, clock });
-  const maintenance = new MaintenanceService({ repo: new PrismaMaintenanceRepository(prisma), attachments, blobs, clock });
+  const maintenance = new MaintenanceService({
+    repo: new PrismaMaintenanceRepository(prisma),
+    attachments,
+    blobs,
+    storage: mediaStorage,
+    clock,
+  });
   const crypto = new NodeCryptoService('worker-unused-secret-0123456789abcdef');
   const quiet = { info: () => undefined };
-  // Only applyDuePhoneChanges runs in the worker.
+  // Only applyDuePhoneChanges and eraseDueAccounts run in the worker.
   const workerOtp = new OtpVerifier(new PrismaOtpChallengeRepository(prisma), crypto, clock, { bypass: false });
   const compliance = new ComplianceService({
     lifecycle: new PrismaAccountLifecycleRepository(prisma),
@@ -116,6 +123,7 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
     otp: workerOtp,
     proofs: new PhoneProofChecker({ otp: workerOtp, firebase: null, clock }),
     sms: new ConsoleSmsProvider(quiet),
+    storage: mediaStorage,
     crypto,
     limiter,
     events,

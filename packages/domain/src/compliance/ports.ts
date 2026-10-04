@@ -8,11 +8,18 @@ export interface PhoneChangeRecord {
 /** Account-level lifecycle operations (DPDP access/erasure, phone change). */
 export interface AccountLifecycleRepository {
   /**
-   * Rule 4: retire every number (codes never reused), close chats, purge the
-   * user's message content, revoke sessions and anonymise the account row.
-   * Payment rows stay (8-year tax retention).
+   * Rule 4, step 1: the account is switched off (its numbers read as unavailable) and every session
+   * revoked. Nothing is erased yet: logging in within 30 days restores it.
    */
-  deleteAccount(accountId: string, at: Date): Promise<void>;
+  requestDeletion(accountId: string, at: Date): Promise<void>;
+  /** Accounts whose deletion was requested before `before` and not cancelled. */
+  listDueErasures(before: Date, limit: number): Promise<string[]>;
+  /**
+   * Rule 4, step 2: retire every number (codes never reused), close chats, erase the user's message
+   * content, cancel billing and anonymise the account row. Payment rows stay (8-year tax retention).
+   * Returns the profile photo keys to destroy.
+   */
+  eraseAccount(accountId: string, at: Date): Promise<{ avatarKeys: string[] }>;
   /** Everything we hold about the user, as plain JSON (DPDP right of access). */
   /** `readablePersonaIds`: PIN-locked numbers not unlocked on this device are listed without content. */
   exportData(accountId: string, readablePersonaIds: ReadonlySet<string>): Promise<Record<string, unknown>>;

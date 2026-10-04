@@ -52,6 +52,7 @@ const messageSelect = {
   deliveredAt: true,
   readAt: true,
   deletedForEveryoneAt: true,
+  expiredAt: true,
   contentPurgedAt: true,
   attachment: { select: { id: true, kind: true, mimeType: true, fileName: true, sizeBytes: true, width: true, height: true } },
 } as const;
@@ -328,7 +329,8 @@ export class PrismaConversationRepository implements ConversationRepository {
   }
 
   async deleteForEveryone(messageId: string, at: Date): Promise<void> {
-    await this.db.message.update({ where: { id: messageId }, data: { deletedForEveryoneAt: at, body: null } });
+    // Soft delete: the text stays (admins can see it in reports) until eraseDeletedContent.
+    await this.db.message.update({ where: { id: messageId }, data: { deletedForEveryoneAt: at } });
   }
 
   async updateMember(

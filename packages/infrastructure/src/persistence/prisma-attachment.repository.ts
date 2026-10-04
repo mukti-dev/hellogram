@@ -22,7 +22,8 @@ export class PrismaAttachmentRepository implements AttachmentRepository {
         OR: [
           // Never sent, or the message row is gone (FK set to NULL).
           { messageId: null, createdAt: { lt: unsentBefore } },
-          { message: { OR: [{ deletedForEveryoneAt: { not: null } }, { contentPurgedAt: { not: null } }] } },
+          // Deleted for everyone or expired files wait until the message's content is erased (30 days).
+          { message: { contentPurgedAt: { not: null } } },
         ],
       },
       select: { id: true, storageKey: true },

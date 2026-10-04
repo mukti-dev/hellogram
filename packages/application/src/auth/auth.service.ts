@@ -213,7 +213,7 @@ export class AuthService {
     // Always run a full hash check, so a missing account takes as long as a wrong password.
     const ok = await this.deps.passwords.verify(hash ?? (await this.dummy()), input.password);
     if (!account || !hash || !ok) throw invalidCredentials();
-    this.assertNotRestricted(account);
+    this.assertCanSignIn(account);
 
     const ipHash = this.deps.crypto.hmac('ip', client.ip);
     if (await this.isTrustedDevice(account.id, input.deviceId)) {
@@ -250,7 +250,7 @@ export class AuthService {
     const account = await this.deps.repos.accounts.findById(pending.accountId);
     // The number may have moved to another account (phone change) since the password check.
     if (!account || account.phone !== pending.phone) throw loginExpired();
-    this.assertNotRestricted(account);
+    this.assertCanSignIn(account);
 
     const ipHash = this.deps.crypto.hmac('ip', client.ip);
     const result = await this.deps.uow.run(async (repos) => {
@@ -269,7 +269,7 @@ export class AuthService {
     const targetHash = this.deps.crypto.hmac('target', phone);
     await this.enforceSendLimit(targetHash);
     const account = await this.deps.repos.accounts.findByPhone(phone);
-    if (!account || isAccountRestricted(account, this.deps.clock.now())) return;
+    if (!account || !this.canSignIn(account)) return;
     await this.sendCode(phone, targetHash, 'password_reset', client);
   }
 
@@ -287,7 +287,7 @@ export class AuthService {
     });
     const account = await this.deps.repos.accounts.findByPhone(phone);
     if (!account) throw new DomainError(ErrorCode.NOT_FOUND, 'No account uses this mobile number. Sign up instead.');
-    this.assertNotRestricted(account);
+    this.assertCanSignIn(account);
 
     const now = this.deps.clock.now();
     const ipHash = this.deps.crypto.hmac('ip', client.ip);
@@ -385,6 +385,8 @@ export class AuthService {
     const deviceId = deviceIdInput && DEVICE_ID.test(deviceIdInput) ? deviceIdInput : this.deps.crypto.randomToken(32);
     const deviceHash = this.deps.crypto.hmac('device', deviceId);
     if (options.trust !== false) await repos.trustedDevices.trust(accountId, deviceHash, now);
+    // Signing in within 30 days of asking to delete the account keeps it.
+    await repos.accounts.cancelDeletion(accountId);
     const session = await repos.sessions.create({
       accountId,
       deviceName: client.deviceName?.slice(0, 60) ?? null,
@@ -431,8 +433,13 @@ export class AuthService {
     }
   }
 
-  private assertNotRestricted(account: Account): void {
-    if (isAccountRestricted(account, this.deps.clock.now())) {
+  /** A pending deletion doesn't stop a sign-in: signing in is how it is undone. */
+  private canSignIn(account: Account): boolean {
+    return account.status === 'pending_deletion' || !isAccountRestricted(account, this.deps.clock.now());
+  }
+
+  private assertCanSignIn(account: Account): void {
+    if (!this.canSignIn(account)) {
       throw new DomainError(ErrorCode.ACCOUNT_RESTRICTED, 'This account is restricted');
     }
   }

@@ -28,7 +28,7 @@ export interface AttachmentRepository {
   delete(id: string): Promise<void>;
   /**
    * Rows whose file must be destroyed: uploads never sent (older than `unsentBefore`),
-   * and files whose message was deleted for everyone, expired, or removed.
+   * and files whose message's content was erased or whose message row is gone.
    */
   listDisposable(unsentBefore: Date, limit: number): Promise<Pick<Attachment, 'id' | 'storageKey'>[]>;
 }

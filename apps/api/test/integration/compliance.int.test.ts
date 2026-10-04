@@ -26,7 +26,7 @@ describe('DPDP data export', () => {
 });
 
 describe('account deletion (rule 4)', () => {
-  it('needs an OTP, retires every number for good, purges my messages and frees the phone', async () => {
+  it('needs an OTP, switches the account off at once and erases it after 30 days', async () => {
     const { owner, visitor, ownerNumber, conversationId } = await connectedPair(h);
     await sendMessage(owner, conversationId, 'my secret message');
 
@@ -39,8 +39,18 @@ describe('account deletion (rule 4)', () => {
     const res = await owner.request({ method: 'DELETE', url: '/v1/me', payload: { code: '123456', confirm: 'DELETE' } });
     expect(res.status).toBe(204);
 
-    // Sessions are gone; the other side sees the number as unavailable.
+    // Sessions are gone; the number can't be reached (like a banned account, the chat itself stays open).
     expect((await owner.request({ method: 'GET', url: '/v1/me' })).status).toBe(401);
+    expect((await sendMessage(visitor, conversationId, 'still there?')).body.error?.code).toBe('NUMBER_UNAVAILABLE');
+    // Nothing is erased for 30 days.
+    expect((await h.db.query(`SELECT status FROM accounts WHERE status = 'pending_deletion'`)).rowCount).toBe(1);
+    expect(await h.container.complianceService.eraseDueAccounts()).toBe(0);
+    const kept = await h.db.query(`SELECT body FROM messages WHERE "senderPersonaId" = $1 AND type = 'text'`, [ownerNumber.id]);
+    expect(kept.rows.map((r) => r.body)).toContain('my secret message');
+
+    await h.db.query(`UPDATE accounts SET "deletedAt" = now() - interval '31 days' WHERE status = 'pending_deletion'`);
+    expect(await h.container.complianceService.eraseDueAccounts()).toBe(1);
+    // Erased: the chat is closed for good.
     expect(((await visitor.request<InboxDto>({ method: 'GET', url: '/v1/conversations' })).body.items[0])?.unavailable).toBe(true);
     const purged = await h.db.query(`SELECT body FROM messages WHERE "senderPersonaId" = $1 AND type = 'text'`, [ownerNumber.id]);
     expect(purged.rows.every((r) => r.body === null)).toBe(true);
@@ -48,6 +58,19 @@ describe('account deletion (rule 4)', () => {
     const acct = await h.db.query(`SELECT status, phone, email FROM accounts WHERE status = 'deleted'`);
     expect(acct.rows[0]).toMatchObject({ status: 'deleted', email: null });
     expect(acct.rows[0].phone).toMatch(/^deleted:/);
+  });
+
+  it('logging in within 30 days keeps the account', async () => {
+    const phone = '9866666666';
+    const user = await h.signUp(phone);
+    const number = await user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: 'Mine', labelName: 'OLX', labelIcon: 'shopping-bag', allowCalls: true } });
+    await user.request({ method: 'POST', url: '/v1/me/delete/otp' });
+    expect((await user.request({ method: 'DELETE', url: '/v1/me', payload: { code: '123456', confirm: 'DELETE' } })).status).toBe(204);
+
+    const back = await h.signUp(phone); // logs in: the number already has an account
+    expect((await back.request<{ items: { id: string }[] }>({ method: 'GET', url: '/v1/personas' })).body.items.map((p) => p.id)).toEqual([number.body.id]);
+    expect((await h.db.query(`SELECT status, "deletedAt" FROM accounts WHERE phone = $1`, [`+91${phone}`])).rows[0]).toMatchObject({ status: 'active', deletedAt: null });
+    expect(await h.container.complianceService.eraseDueAccounts()).toBe(0);
   });
 });
 
@@ -101,6 +124,8 @@ describe('deleted numbers stay deleted', () => {
     await user.request<OwnPersonaDto>({ method: 'POST', url: '/v1/personas', payload: { displayName: 'Old', labelName: 'OLX', labelIcon: 'shopping-bag', allowCalls: true } });
     await user.request({ method: 'POST', url: '/v1/me/delete/otp' });
     await user.request({ method: 'DELETE', url: '/v1/me', payload: { code: '123456', confirm: 'DELETE' } });
+    await h.db.query(`UPDATE accounts SET "deletedAt" = now() - interval '31 days' WHERE status = 'pending_deletion'`);
+    await h.container.complianceService.eraseDueAccounts();
     const again = await h.signUp('9855555555');
     expect((await again.request<{ items: unknown[] }>({ method: 'GET', url: '/v1/personas' })).body.items).toEqual([]);
   });

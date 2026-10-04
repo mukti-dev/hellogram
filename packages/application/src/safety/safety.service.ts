@@ -87,6 +87,7 @@ export class SafetyService {
             type: 'intro',
             body: request.introMessage,
             deleted: false,
+            expired: false,
             suppressed: false,
           },
         ],

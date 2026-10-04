@@ -23,14 +23,28 @@ const MIN = 60_000;
 
 export const handlers: Record<string, Record<string, JobHandler>> = {
   [QUEUES.maintenance]: {
-    'retention.purgeContent': async (_job, logger, c) => {
-      const purged = await c.maintenance.purgeExpiredContent();
-      if (purged) logger.info({ purged }, 'message content purged');
+    // Messages past their chat's retention disappear (content kept 30 days, then erased below).
+    'retention.expireContent': async (_job, logger, c) => {
+      const expired = await c.maintenance.expireContent();
+      if (expired) logger.info({ expired }, 'messages expired');
+    },
+    // Soft delete → permanent: deleted/expired messages, replaced photos and deleted accounts after 30 days.
+    'trash.eraseContent': async (_job, logger, c) => {
+      const erased = await c.maintenance.eraseDeletedContent();
+      if (erased) logger.info({ erased }, 'deleted message content erased');
+    },
+    'trash.purgeFiles': async (_job, logger, c) => {
+      const removed = await c.maintenance.purgeTrashedFiles();
+      if (removed) logger.info({ removed }, 'trashed photos destroyed');
+    },
+    'account.eraseDeleted': async (_job, logger, c) => {
+      const erased = await c.compliance.eraseDueAccounts();
+      if (erased) logger.info({ erased }, 'deleted accounts erased');
     },
     'retention.purgeMetadata': async (_job, logger, c) => {
       logger.info(await c.maintenance.purgeOldMetadata(), 'old metadata purged');
     },
-    // Deleted / expired / never-sent files are destroyed in storage.
+    // Erased and never-sent files are destroyed in storage.
     'attachments.sweep': async (_job, logger, c) => {
       const removed = await c.maintenance.sweepAttachments();
       if (removed) logger.info({ removed }, 'attachment files destroyed');
@@ -79,7 +93,10 @@ export const handlers: Record<string, Record<string, JobHandler>> = {
 };
 
 export const repeatableJobs: RepeatableJob[] = [
-  { queue: QUEUES.maintenance, name: 'retention.purgeContent', every: 10 * MIN },
+  { queue: QUEUES.maintenance, name: 'retention.expireContent', every: 10 * MIN },
+  { queue: QUEUES.maintenance, name: 'trash.eraseContent', every: 60 * MIN },
+  { queue: QUEUES.maintenance, name: 'trash.purgeFiles', every: 24 * 60 * MIN },
+  { queue: QUEUES.maintenance, name: 'account.eraseDeleted', every: 60 * MIN },
   { queue: QUEUES.maintenance, name: 'attachments.sweep', every: 10 * MIN },
   { queue: QUEUES.maintenance, name: 'requests.expire', every: 60 * MIN },
   { queue: QUEUES.maintenance, name: 'calls.sweepRinging', every: MIN },

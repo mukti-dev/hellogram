@@ -230,12 +230,13 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
   });
 
   const personas = new PrismaPersonaRepository(prisma);
+  const mediaStorage = new LocalDiskStorage(env.MEDIA_DIR, env.MEDIA_PUBLIC_URL);
   const personaService = new PersonaService({
     personas,
     crypto,
     clock,
     events,
-    storage: new LocalDiskStorage(env.MEDIA_DIR, env.MEDIA_PUBLIC_URL),
+    storage: mediaStorage,
     qr: new QrCodeSvgRenderer(),
     publicBaseUrl: env.PUBLIC_BASE_URL,
     codeDigits: env.CODE_DIGITS,
@@ -248,8 +249,6 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
   const blobs = overrides.blobs ?? attachmentStorage.blobs;
   const chatService = new ChatService({
     conversations,
-    attachments,
-    blobs,
     personas,
     reach,
     events,
@@ -360,13 +359,20 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     otp,
     proofs,
     sms,
+    storage: mediaStorage,
     crypto,
     limiter,
     events,
     clock,
   });
 
-  const maintenanceService = new MaintenanceService({ repo: new PrismaMaintenanceRepository(prisma), attachments, blobs, clock });
+  const maintenanceService = new MaintenanceService({
+    repo: new PrismaMaintenanceRepository(prisma),
+    attachments,
+    blobs,
+    storage: mediaStorage,
+    clock,
+  });
 
   const healthService = new HealthService(
     [new PostgresHealthProbe(prisma), new RedisHealthProbe(redis)],

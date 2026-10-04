@@ -6,6 +6,8 @@ export const LIMITS = {
   REQUEST_COOLDOWN_DAYS: 7,
   REQUEST_EXPIRY_DAYS: 30,
   METADATA_RETENTION_DAYS: 180,
+  /** Deleted things (messages, files, photos, accounts) are kept this long, then erased for good. */
+  SOFT_DELETE_DAYS: 30,
   REPORT_EVIDENCE_MESSAGES: 50,
   DISPLAY_NAME_MAX: 40,
   LABEL_NAME_MAX: 20,

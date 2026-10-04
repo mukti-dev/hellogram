@@ -19,7 +19,7 @@ interface Report {
 }
 interface ReportDetail extends Report {
   alsoBlocked: boolean;
-  evidence: { at: string; senderCode: string; senderDisplayName: string; type: string; body: string | null; deleted: boolean; suppressed: boolean }[];
+  evidence: { at: string; senderCode: string; senderDisplayName: string; type: string; body: string | null; deleted: boolean; expired?: boolean; suppressed: boolean }[];
 }
 
 export function ReportsPage() {
@@ -93,7 +93,9 @@ function ReportDetailView({ id }: { id: string }) {
           <li key={i} className={cn('py-1', m.senderCode === r.reportedCode ? 'text-fg' : 'text-muted')}>
             <span className="font-mono text-xs">{new Date(m.at).toLocaleString()}</span>{' '}
             <span className="font-semibold">{m.senderDisplayName}</span>
-            {m.type === 'intro' && <span className="text-xs"> (intro)</span>}: {m.deleted ? <em>deleted</em> : (m.body ?? <em>purged</em>)}
+            {m.type === 'intro' && <span className="text-xs"> (intro)</span>}: {m.body ?? <em>purged</em>}
+            {m.deleted && <span className="text-xs"> (deleted)</span>}
+            {m.expired && <span className="text-xs"> (expired)</span>}
             {m.suppressed && <span className="text-xs text-warning"> [not delivered]</span>}
           </li>
         ))}

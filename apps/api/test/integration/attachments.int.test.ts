@@ -195,16 +195,24 @@ describe('who can download', () => {
 });
 
 describe('deleting and expiry', () => {
-  it('delete for everyone destroys the stored file immediately', async () => {
+  it('delete for everyone hides the file at once and destroys it 30 days later', async () => {
     const { owner, visitor, conversationId } = await connectedPair(h);
     const { attachment, message } = await share(visitor, conversationId);
     expect(storage.objects.size).toBe(1);
 
     expect((await visitor.request({ method: 'DELETE', url: `/v1/messages/${message.id}?scope=everyone` })).status).toBe(204);
-    expect(storage.objects.size).toBe(0);
     expect((await download(owner, attachment.id)).statusCode).toBe(404);
     expect((await download(visitor, attachment.id)).statusCode).toBe(404);
     expect((await messages(owner, conversationId))[0]).toMatchObject({ deleted: true, attachment: null });
+    // Soft delete: kept (unreadable) for 30 days.
+    expect(await h.container.maintenanceService.eraseDeletedContent()).toBe(0);
+    expect(await h.container.maintenanceService.sweepAttachments()).toBe(0);
+    expect(storage.objects.size).toBe(1);
+
+    await h.db.query(`UPDATE messages SET "deletedForEveryoneAt" = now() - interval '31 days' WHERE id = $1`, [message.id]);
+    expect(await h.container.maintenanceService.eraseDeletedContent()).toBe(1);
+    expect(await h.container.maintenanceService.sweepAttachments()).toBe(1);
+    expect(storage.objects.size).toBe(0);
   });
 
   it('delete for me and clear chat hide the file for that side only', async () => {
@@ -226,11 +234,14 @@ describe('deleting and expiry', () => {
     await owner.request({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'h24' } });
     await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '25 hours' WHERE id = $1`, [message.id]);
 
-    await h.container.maintenanceService.purgeExpiredContent();
-    // Unreadable at once, even before the file itself is destroyed…
+    await h.container.maintenanceService.expireContent();
+    // Unreadable at once, but kept for 30 days…
     expect((await download(owner, attachment.id)).statusCode).toBe(404);
+    expect(await h.container.maintenanceService.sweepAttachments()).toBe(0);
     expect(storage.objects.size).toBe(1);
-    // …and the next sweep destroys it.
+    // …then erased and destroyed.
+    await h.db.query(`UPDATE messages SET "expiredAt" = now() - interval '31 days' WHERE id = $1`, [message.id]);
+    expect(await h.container.maintenanceService.eraseDeletedContent()).toBe(1);
     expect(await h.container.maintenanceService.sweepAttachments()).toBe(1);
     expect(storage.objects.size).toBe(0);
     expect((await h.db.query('SELECT 1 FROM attachments')).rowCount).toBe(0);
