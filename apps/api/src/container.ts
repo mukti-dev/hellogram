@@ -38,6 +38,7 @@ import {
   createAttachmentStorage,
   PrismaBillingRepository,
   PrismaGrievanceRepository,
+  PrismaNativePushTokenRepository,
   PrismaPushSubscriptionRepository,
   RazorpayBillingProvider,
   CoturnCredentialIssuer,
@@ -346,6 +347,8 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
 
   const notificationService = new NotificationService({
     subscriptions: new PrismaPushSubscriptionRepository(prisma),
+    nativeTokens: new PrismaNativePushTokenRepository(prisma),
+    clock,
     sender: null, // delivery happens in the worker
   });
   const pushTriggers = new PushTriggers({ personas, conversations: new PrismaConversationRepository(prisma), clock });
