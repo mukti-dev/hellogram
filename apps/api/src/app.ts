@@ -30,6 +30,7 @@ import { publicRoutes } from './modules/public/public.routes.js';
 import { RequestController } from './modules/requests/request.controller.js';
 import { requestRoutes } from './modules/requests/request.routes.js';
 import { pinRoutes } from './modules/pin/pin.routes.js';
+import { vaultRoutes } from './modules/vault/vault.routes.js';
 import { safetyRoutes } from './modules/safety/safety.routes.js';
 import { personaRoutes } from './modules/personas/persona.routes.js';
 import { meRoutes } from './modules/me/me.routes.js';
@@ -74,6 +75,7 @@ export async function buildApp({ container, corsOrigins, logger }: BuildAppOptio
   await app.register(authPlugin, {
     authService: container.authService,
     ...(container.pinService ? { pinService: container.pinService } : {}),
+    ...(container.vaultService ? { vaultService: container.vaultService } : {}),
   });
 
   // Health checks live outside /v1 so load balancers don't depend on API versioning.
@@ -93,6 +95,7 @@ export async function buildApp({ container, corsOrigins, logger }: BuildAppOptio
       await v1.register(attachmentRoutes(new AttachmentController(container.attachmentService)));
       await v1.register(safetyRoutes(container.safetyService));
       await v1.register(pinRoutes(container.pinService));
+      await v1.register(vaultRoutes(container.vaultService));
       await v1.register(callRoutes(container.callService, container.avatarUrl));
       await v1.register(callNotificationRoutes(container.callService));
       await v1.register(billingRoutes(container.billingService, container.billingDevTools));

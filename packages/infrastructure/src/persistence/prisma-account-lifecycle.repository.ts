@@ -54,6 +54,8 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
       await tx.session.updateMany({ where: { accountId, revokedAt: null }, data: { revokedAt: at, revokeReason: 'account_deleted' } });
       await tx.pushSubscription.deleteMany({ where: { accountId } });
       await tx.nativePushToken.deleteMany({ where: { accountId } });
+      await tx.chatVault.deleteMany({ where: { accountId } });
+      await tx.vaultSpace.deleteMany({ where: { accountId } });
       await tx.subscription.updateMany({ where: { accountId, status: { not: 'cancelled' } }, data: { status: 'cancelled' } });
       await tx.phoneChange.updateMany({ where: { accountId, completedAt: null, cancelledAt: null }, data: { cancelledAt: at } });
       // Anonymise: the phone/email are freed for a future sign-up and no longer stored.

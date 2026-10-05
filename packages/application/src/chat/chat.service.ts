@@ -20,6 +20,7 @@ import {
   type PersonaRepository,
   type RateLimiter,
   type ReachRepository,
+  type VaultState,
 } from '@hellogram/domain';
 import { ErrorCode, type Retention } from '@hellogram/shared';
 
@@ -36,6 +37,8 @@ export interface ChatDeps {
 const MESSAGES_PER_MINUTE = 30;
 
 export interface InboxQuery {
+  /** Vault folder; default the normal inbox. 'hidden' lists the spaces this device opened. */
+  folder?: VaultState | 'inbox' | undefined;
   personaId?: string | undefined;
   label?: string | undefined;
   unreadOnly?: boolean | undefined;
@@ -57,23 +60,34 @@ export class ChatService {
       (p) => !query.personaId || p.id === query.personaId,
     );
     const readable = mine.filter((p) => isReadable(p, actor.unlockedPersonaIds));
+    const folder = query.folder ?? 'inbox';
+    const spaceIds = [...(actor.vault?.spaces ?? [])];
+    if (folder === 'hidden' && spaceIds.length === 0) return { items: [], nextCursor: null, locked: [] };
     const page = await this.deps.conversations.listInbox({
       personaIds: readable.map((p) => p.id),
+      folders: [folder],
+      spaceIds,
       label: query.label,
       unreadOnly: query.unreadOnly,
       query: query.query,
       cursor: query.cursor,
       limit: 30,
     });
-    const locked = query.cursor || query.query ? [] : mine.filter((p) => !isReadable(p, actor.unlockedPersonaIds));
-    return { ...page, locked };
+    // Locked chats show who they're with, but no preview until this device opens them.
+    const items = page.items.map((row) =>
+      row.me.vault === 'locked' && !actor.vault?.chats.has(row.conversation.id) ? { ...row, lastMessage: null } : row,
+    );
+    const locked =
+      folder !== 'inbox' || query.cursor || query.query ? [] : mine.filter((p) => !isReadable(p, actor.unlockedPersonaIds));
+    return { items, nextCursor: page.nextCursor, locked };
   }
 
   async unreadCount(actor: Actor): Promise<number> {
     const readable = (await this.deps.personas.listByAccount(actor.accountId)).filter((p) =>
       isReadable(p, actor.unlockedPersonaIds),
     );
-    return this.deps.conversations.countUnreadConversations(readable.map((p) => p.id));
+    // Archived and hidden chats don't count.
+    return this.deps.conversations.countUnreadConversations(readable.map((p) => p.id), ['inbox', 'locked']);
   }
 
   /** The conversation from the actor's side. Enforces membership and PIN lock. */
@@ -88,6 +102,13 @@ export class ChatService {
       throw new DomainError(ErrorCode.PERSONA_LOCKED, 'Unlock this number to see its chats', {
         personaId: view.myPersona.id,
       });
+    }
+    // Hidden chats don't exist for a device that hasn't opened their space.
+    if (view.me.vault === 'hidden' && !(view.me.vaultSpaceId && actor.vault?.spaces.has(view.me.vaultSpaceId))) {
+      throw new DomainError(ErrorCode.NOT_FOUND, 'Chat not found');
+    }
+    if (view.me.vault === 'locked' && !actor.vault?.chats.has(conversationId)) {
+      throw new DomainError(ErrorCode.CHAT_LOCKED, 'Enter your chat lock PIN', { conversationId });
     }
     return view;
   }

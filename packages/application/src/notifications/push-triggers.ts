@@ -30,12 +30,13 @@ export class PushTriggers {
   async forMessage(p: { message: Message; conversationId: string; senderPersonaId: string; recipientPersonaId: string }): Promise<PushIntent | null> {
     if (p.message.suppressed || p.message.type !== 'text') return null;
     const view = await this.deps.conversations.findView(p.conversationId, p.recipientPersonaId);
-    if (!view || view.me.hiddenAt) return null;
+    // Hidden chats are silent; locked chats say only "New message" (like locked numbers).
+    if (!view || view.me.hiddenAt || view.me.vault === 'hidden') return null;
     const now = this.deps.clock.now();
     if (view.me.mutedUntil && view.me.mutedUntil > now) return null;
     if (isInDnd(view.myPersona, now)) return null;
     const url = `/inbox/${p.conversationId}`;
-    if (view.myPersona.hasPin) {
+    if (view.myPersona.hasPin || view.me.vault === 'locked') {
       return { accountId: view.myPersona.accountId, onlyIfOffline: true, payload: { title: 'Hellogram', body: 'New message', url, tag: 'locked' } };
     }
     return {

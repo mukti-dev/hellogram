@@ -92,9 +92,9 @@ export class AttachmentService {
     const attachment = await this.deps.attachments.findById(attachmentId);
     if (!attachment?.messageId) throw notFound();
 
-    // Membership, hidden chats and the PIN lock.
+    // Membership, hidden chats, the number PIN and the chat lock.
     const view = await this.deps.chat.view(actor, attachment.conversationId).catch((error: unknown) => {
-      if (error instanceof DomainError && error.code === ErrorCode.PERSONA_LOCKED) throw error;
+      if (error instanceof DomainError && (error.code === ErrorCode.PERSONA_LOCKED || error.code === ErrorCode.CHAT_LOCKED)) throw error;
       throw notFound();
     });
     // Blocked (suppressed), deleted for me, cleared, deleted for everyone, or expired.

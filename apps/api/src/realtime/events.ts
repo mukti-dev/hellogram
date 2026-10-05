@@ -109,6 +109,11 @@ export function registerRealtimeEvents(
     rt.to(accountRoom(p.accountId)).emit('conversation:updated', { conversationId: p.conversationId });
   });
 
+  events.subscribe('vault.updated', (event) => {
+    const p = event.payload as { conversationId: string | null; accountId: string };
+    rt.to(accountRoom(p.accountId)).emit('vault:updated', { conversationId: p.conversationId });
+  });
+
   events.subscribe('call.incoming', (event) => {
     const p = event.payload as {
       callId: string;

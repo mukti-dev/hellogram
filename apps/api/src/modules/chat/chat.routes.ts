@@ -23,6 +23,7 @@ export const chatRoutes =
       {
         schema: {
           querystring: z.object({
+            folder: z.enum(['inbox', 'archived', 'locked', 'hidden']).optional(),
             personaId: z.uuid().optional(),
             label: z.string().trim().min(1).max(20).optional(),
             unread: z.stringbool().optional(),

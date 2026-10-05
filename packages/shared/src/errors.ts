@@ -38,6 +38,12 @@ export const ErrorCode = {
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   FILE_TYPE_NOT_ALLOWED: 'FILE_TYPE_NOT_ALLOWED',
   MEDIA_NOT_ALLOWED: 'MEDIA_NOT_ALLOWED',
+  /** The chat is locked with the chat lock PIN; details.conversationId. */
+  CHAT_LOCKED: 'CHAT_LOCKED',
+  /** No chat lock PIN set yet. */
+  VAULT_PIN_NOT_SET: 'VAULT_PIN_NOT_SET',
+  /** Hiding with a PIN that opens no hidden space yet: confirm to start a new one. */
+  VAULT_NEW_PIN: 'VAULT_NEW_PIN',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

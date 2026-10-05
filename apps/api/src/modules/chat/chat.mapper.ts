@@ -83,6 +83,7 @@ export function toConversationDto(
     unread: view.unread ?? 0,
     lastMessage: last ? toMessageDto(last, view.myPersona.id) : null,
     lastActivityAt: (last?.createdAt ?? view.conversation.createdAt).toISOString(),
+    vault: view.me.vault,
   };
 }
 

@@ -60,3 +60,5 @@ export * from './providers/message-central.verification.js';
 export * from './providers/two-factor.verification.js';
 export * from './persistence/prisma-trusted-device.repository.js';
 export * from './redis/redis-ephemeral.store.js';
+export * from './redis/redis-vault-token.store.js';
+export * from './persistence/prisma-vault.repository.js';
