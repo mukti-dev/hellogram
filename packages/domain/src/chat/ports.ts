@@ -1,4 +1,4 @@
-import type { Retention } from '@hellogram/shared';
+import type { GifDto, Retention } from '@hellogram/shared';
 import type { Page } from '../requests/ports.js';
 import type { Attachment } from './attachments.js';
 import type { ConversationView, InboxFilter, InboxRow, Message, SystemPayload } from './chat.js';
@@ -17,6 +17,7 @@ export interface NewMessage {
    * and not already sent — otherwise nothing is inserted and `attachmentRejected` comes back.
    */
   attachmentId?: string | null;
+  gif?: GifDto | null;
 }
 
 export type InsertMessageResult = { message: Message; created: boolean } | { attachmentRejected: true };

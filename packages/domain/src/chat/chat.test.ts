@@ -11,6 +11,7 @@ const msg = (over: Partial<Message> = {}): Message => ({
   type: 'text',
   body: 'hi',
   attachment: null,
+  gif: null,
   systemPayload: null,
   suppressed: false,
   createdAt: NOW,

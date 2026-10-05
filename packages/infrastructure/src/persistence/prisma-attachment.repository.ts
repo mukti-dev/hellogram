@@ -1,15 +1,21 @@
+import { Prisma } from '@hellogram/db';
 import type { Attachment, AttachmentRepository, NewAttachment } from '@hellogram/domain';
 import type { Db } from './prisma-types.js';
+
+type Row = Omit<Attachment, 'waveform'> & { waveform: Prisma.JsonValue };
+const toAttachment = (row: Row): Attachment => ({ ...row, waveform: Array.isArray(row.waveform) ? (row.waveform as number[]) : null });
 
 export class PrismaAttachmentRepository implements AttachmentRepository {
   constructor(private readonly db: Db) {}
 
-  create(attachment: NewAttachment): Promise<Attachment> {
-    return this.db.attachment.create({ data: attachment });
+  async create({ waveform, ...attachment }: NewAttachment): Promise<Attachment> {
+    const row = await this.db.attachment.create({ data: { ...attachment, waveform: waveform ?? Prisma.DbNull } });
+    return toAttachment(row);
   }
 
-  findById(id: string): Promise<Attachment | null> {
-    return this.db.attachment.findUnique({ where: { id } });
+  async findById(id: string): Promise<Attachment | null> {
+    const row = await this.db.attachment.findUnique({ where: { id } });
+    return row ? toAttachment(row) : null;
   }
 
   async delete(id: string): Promise<void> {

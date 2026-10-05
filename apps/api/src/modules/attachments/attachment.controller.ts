@@ -17,6 +17,19 @@ function fileNameOf(request: FastifyRequest): string {
   }
 }
 
+/** What the upload is for (X-Attachment-Purpose): a voice message, a sticker, or a plain file. */
+function purposeOf(request: FastifyRequest): 'file' | 'voice' | 'sticker' {
+  const raw = request.headers['x-attachment-purpose'];
+  return raw === 'voice' || raw === 'sticker' ? raw : 'file';
+}
+
+/** X-Voice-Waveform: comma-separated bar heights (cleaned up again in the domain). */
+function waveformOf(request: FastifyRequest): number[] | undefined {
+  const raw = request.headers['x-voice-waveform'];
+  if (typeof raw !== 'string' || raw.length > 400) return undefined;
+  return raw.split(',').map(Number);
+}
+
 /** RFC 5987 file name for Content-Disposition (the name was already cleaned on upload). */
 const disposition = (type: 'inline' | 'attachment', fileName: string) =>
   `${type}; filename="${fileName.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
@@ -31,13 +44,15 @@ export class AttachmentController {
     const attachment = await this.attachments.upload(actorOf(request), request.params.id, {
       bytes: request.body,
       fileName: fileNameOf(request),
+      purpose: purposeOf(request),
+      waveform: waveformOf(request),
     });
     return reply.status(201).send(toAttachmentDto(attachment));
   };
 
   download = async (request: FastifyRequest<IdParams>, reply: FastifyReply) => {
     const { attachment, bytes } = await this.attachments.download(actorOf(request), request.params.id);
-    const image = attachment.kind === 'image';
+    const image = attachment.kind === 'image' || attachment.kind === 'sticker';
     return (
       reply
         // Only images are ever labelled as something a browser would render.

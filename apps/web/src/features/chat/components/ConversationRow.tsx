@@ -9,12 +9,23 @@ import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
 export const chatTitle = (c: Pick<ConversationDto, 'nickname' | 'counterpart'>) => c.nickname ?? c.counterpart.displayName;
 
+/** What a message without text shows in the inbox. */
+function mediaLabel(m: NonNullable<ConversationDto['lastMessage']>): string {
+  const a = m.attachment;
+  if (m.gif) return t('chat.gif');
+  if (!a) return '';
+  if (a.kind === 'voice') return `🎤 ${t('chat.voiceMessage')}`;
+  if (a.kind === 'sticker') return t('chat.sticker');
+  if (a.kind === 'image') return a.mimeType === 'image/gif' ? t('chat.gif') : `📷 ${t('chat.photo')}`;
+  return `📎 ${a.fileName}`;
+}
+
 function preview(c: ConversationDto): string {
   const m = c.lastMessage;
   if (!m) return '';
   if (m.type === 'system') return systemText(m, c.counterpart.displayName);
   if (m.deleted) return t('chat.deleted');
-  const file = m.attachment ? (m.attachment.kind === 'image' ? `📷 ${t('chat.photo')}` : `📎 ${m.attachment.fileName}`) : '';
+  const file = mediaLabel(m);
   return `${m.mine ? 'You: ' : ''}${m.body ?? file}`;
 }
 

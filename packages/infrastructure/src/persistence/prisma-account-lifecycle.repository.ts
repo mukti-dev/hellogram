@@ -1,3 +1,4 @@
+import { Prisma } from '@hellogram/db';
 import type { PrismaClient } from '@hellogram/db';
 import { hasContent, type AccountLifecycleRepository, type PhoneChangeRecord } from '@hellogram/domain';
 import { randomUUID } from 'node:crypto';
@@ -45,7 +46,7 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
       // Content erased: the user's own messages lose their text (files are swept next); metadata follows the 180-day rule.
       await tx.message.updateMany({
         where: { senderPersonaId: { in: ids }, contentPurgedAt: null },
-        data: { body: null, contentPurgedAt: at },
+        data: { body: null, gif: Prisma.DbNull, contentPurgedAt: at },
       });
       await tx.contactRequest.updateMany({
         where: { status: 'pending', OR: [{ fromPersonaId: { in: ids } }, { toPersonaId: { in: ids } }] },

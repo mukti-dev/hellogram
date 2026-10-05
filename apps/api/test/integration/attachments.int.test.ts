@@ -56,7 +56,17 @@ describe('sharing a file', () => {
     const { owner, visitor, conversationId } = await connectedPair(h);
     const { attachment, message } = await share(visitor, conversationId);
 
-    expect(attachment).toEqual({ id: attachment.id, kind: 'file', fileName: 'agreement.pdf', mimeType: 'application/pdf', size: PDF.length, width: null, height: null });
+    expect(attachment).toEqual({
+      id: attachment.id,
+      kind: 'file',
+      fileName: 'agreement.pdf',
+      mimeType: 'application/pdf',
+      size: PDF.length,
+      width: null,
+      height: null,
+      durationMs: null,
+      waveform: null,
+    });
     expect(message.attachment).toEqual(attachment);
     expect(message.body).toBeNull();
     assertNoAccountLeak(message);

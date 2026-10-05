@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DomainError } from '../errors/domain-error.js';
-import { inspectFile, sanitizeFileName } from './attachments.js';
+import { inspectFile, normalizeWaveform, sanitizeFileName } from './attachments.js';
 
 const bytes = (...parts: (number[] | string | Uint8Array)[]) =>
   Uint8Array.from(parts.flatMap((p) => (typeof p === 'string' ? [...Buffer.from(p, 'latin1')] : [...p])));
@@ -139,5 +139,60 @@ describe('sanitizeFileName', () => {
     expect(sanitizeFileName('.htaccess', 'txt')).toBe('file.txt');
     expect(sanitizeFileName('रसीद 2026.pdf', 'pdf')).toBe('रसीद 2026.pdf');
     expect(sanitizeFileName('x'.repeat(500), 'pdf')).toHaveLength(120);
+  });
+});
+
+describe('videos, audio, voice messages and stickers', () => {
+  const u32 = (n: number) => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+  const box = (type: string, ...payload: number[][]) => {
+    const body = payload.flat();
+    return [...u32(body.length + 8), ...Buffer.from(type, 'latin1'), ...body];
+  };
+  const str = (s: string) => [...Buffer.from(s, 'latin1')];
+  // mvhd v0: version/flags, created, modified, timescale 1000, duration 4200 ms.
+  const mvhd = box('mvhd', [0, 0, 0, 0], u32(0), u32(0), u32(1000), u32(4200), new Array(80).fill(0));
+  const hdlr = (handler: string) => box('hdlr', [0, 0, 0, 0], u32(0), str(handler), new Array(12).fill(0), [0]);
+  const trak = (handler: string) => box('trak', box('mdia', hdlr(handler)));
+  const mp4 = (brand: string, ...tracks: string[]) =>
+    Uint8Array.from([
+      ...box('ftyp', str(brand), u32(0), str('isom')),
+      ...box('moov', mvhd, ...tracks.map(trak), box('udta', box('meta', str('+12.9716+077.5946/ GPS of home')))),
+      ...box('mdat', str('audio-and-video-samples')),
+    ]);
+
+  it('accepts phone videos as files and blanks their location metadata in place', () => {
+    const input = mp4('qt  ', 'vide', 'soun');
+    const out = inspectFile(input, 'IMG_0042.MOV');
+    expect(out).toMatchObject({ kind: 'file', mimeType: 'video/quicktime', fileName: 'IMG_0042.mov' });
+    expect(out.bytes.byteLength).toBe(input.byteLength); // offsets stay valid
+    expect(has(out.bytes, 'GPS of home')).toBe(false);
+    expect(has(out.bytes, 'audio-and-video-samples')).toBe(true);
+    expect(inspectFile(mp4('mp42', 'vide'), 'clip.mov')).toMatchObject({ mimeType: 'video/mp4', fileName: 'clip.mp4' });
+  });
+
+  it('accepts audio files (M4A, MP3, WAV)', () => {
+    expect(inspectFile(mp4('M4A ', 'soun'), 'song.m4a')).toMatchObject({ kind: 'file', mimeType: 'audio/mp4' });
+    expect(inspectFile(bytes('ID3', [4, 0, 0], 'frames'), 'song.mp3')).toMatchObject({ mimeType: 'audio/mpeg', fileName: 'song.mp3' });
+    expect(inspectFile(bytes('RIFF', le32(100), 'WAVEfmt '), 'note.wav')).toMatchObject({ mimeType: 'audio/wav' });
+  });
+
+  it('voice messages must be audio-only recordings, with their length read from the file', () => {
+    const out = inspectFile(mp4('M4A ', 'soun'), 'whatever.bin', 'voice');
+    expect(out).toMatchObject({ kind: 'voice', mimeType: 'audio/mp4', fileName: 'Voice message.m4a', durationMs: 4200 });
+    expect(has(out.bytes, 'GPS of home')).toBe(false);
+    expect(codeOf(() => inspectFile(mp4('mp42', 'vide', 'soun'), 'v.m4a', 'voice'))).toBe('FILE_TYPE_NOT_ALLOWED');
+    expect(codeOf(() => inspectFile(bytes('%PDF-1.7'), 'v.m4a', 'voice'))).toBe('FILE_TYPE_NOT_ALLOWED');
+  });
+
+  it('stickers are small PNG/WebP/GIF images, never JPEGs or other files', () => {
+    expect(inspectFile(PNG, 'hi.png', 'sticker')).toMatchObject({ kind: 'sticker', mimeType: 'image/png' });
+    expect(codeOf(() => inspectFile(JPEG, 'hi.jpg', 'sticker'))).toBe('FILE_TYPE_NOT_ALLOWED');
+    expect(codeOf(() => inspectFile(bytes('%PDF-1.7'), 'hi.png', 'sticker'))).toBe('FILE_TYPE_NOT_ALLOWED');
+  });
+
+  it('cleans up the waveform the app sends', () => {
+    expect(normalizeWaveform([3, 40, -2, 'x', 12.6])).toEqual([3, 31, 0, 0, 13]);
+    expect(normalizeWaveform(new Array(100).fill(5))).toHaveLength(64);
+    expect(normalizeWaveform('nope')).toBeNull();
   });
 });

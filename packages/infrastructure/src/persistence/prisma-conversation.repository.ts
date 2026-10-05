@@ -57,15 +57,26 @@ const messageSelect = {
   deletedForEveryoneAt: true,
   expiredAt: true,
   contentPurgedAt: true,
-  attachment: { select: { id: true, kind: true, mimeType: true, fileName: true, sizeBytes: true, width: true, height: true } },
+  gif: true,
+  attachment: {
+    select: { id: true, kind: true, mimeType: true, fileName: true, sizeBytes: true, width: true, height: true, durationMs: true, waveform: true },
+  },
 } as const;
 
-type MessageRow = Omit<Message, 'systemPayload'> & { systemPayload: Prisma.JsonValue };
+type MessageRow = Omit<Message, 'systemPayload' | 'attachment' | 'gif'> & {
+  systemPayload: Prisma.JsonValue;
+  gif: Prisma.JsonValue;
+  attachment: (Omit<NonNullable<Message['attachment']>, 'waveform'> & { waveform: Prisma.JsonValue }) | null;
+};
 type ConversationRow = Prisma.ConversationGetPayload<{ select: typeof conversationSelect }>;
 
 const toMessage = (row: MessageRow): Message => ({
   ...row,
   systemPayload: (row.systemPayload as SystemPayload | null) ?? null,
+  gif: (row.gif as Message['gif']) ?? null,
+  attachment: row.attachment
+    ? { ...row.attachment, waveform: Array.isArray(row.attachment.waveform) ? (row.attachment.waveform as number[]) : null }
+    : null,
 });
 
 function toView(row: ConversationRow, myPersonaId: string): ConversationView | null {
@@ -211,6 +222,7 @@ export class PrismaConversationRepository implements ConversationRepository {
       type: message.type,
       body: message.body,
       systemPayload: message.systemPayload ?? Prisma.JsonNull,
+      gif: message.gif ?? Prisma.DbNull,
       suppressed: message.suppressed,
     };
     if (message.attachmentId) {

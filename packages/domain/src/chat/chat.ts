@@ -1,4 +1,4 @@
-import { ErrorCode, LIMITS, type Retention } from '@hellogram/shared';
+import { ErrorCode, LIMITS, type GifDto, type Retention } from '@hellogram/shared';
 import { DomainError } from '../errors/domain-error.js';
 import type { Persona } from '../personas/persona.js';
 import type { MessageAttachment } from './attachments.js';
@@ -15,6 +15,8 @@ export interface Message {
   type: MessageType;
   body: string | null;
   attachment: MessageAttachment | null;
+  /** A KLIPY GIF link (validated against the KLIPY media hosts). */
+  gif: GifDto | null;
   systemPayload: SystemPayload | null;
   suppressed: boolean;
   createdAt: Date;

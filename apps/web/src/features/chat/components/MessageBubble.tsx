@@ -4,7 +4,7 @@ import { ChevronDown, Copy, Trash2 } from 'lucide-react';
 import { t } from '../../../i18n/t.js';
 import { clockTime } from '../../../shared/format.js';
 import { useDeleteMessage } from '../model/queries.js';
-import { AttachmentView } from './AttachmentView.js';
+import { AttachmentView, GifView } from './AttachmentView.js';
 import { Ticks, type TickState } from './Ticks.js';
 
 const PERIOD: Record<string, string> = { d90: '90 days', d30: '30 days', d7: '7 days', h24: '24 hours' };
@@ -43,6 +43,8 @@ export function MessageBubble({
   }
 
   const mine = message.mine;
+  // Stickers stand on their own, without a bubble.
+  const sticker = message.attachment?.kind === 'sticker' && !message.deleted;
   const state: TickState | null = tick ?? (mine && message.status ? message.status : null);
   const isOptimistic = Boolean(tick);
 
@@ -50,21 +52,23 @@ export function MessageBubble({
     <div className={cn('group flex items-end gap-1', mine ? 'justify-end' : 'justify-start')}>
       <div
         className={cn(
-          'relative max-w-[78%] rounded-2xl text-[15px] leading-snug shadow-sm',
-          message.attachment ? 'p-1.5' : 'px-3.5 py-2',
-          mine ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md bg-surface-2 text-fg',
+          'relative max-w-[78%] rounded-2xl text-[15px] leading-snug',
+          sticker ? 'text-fg' : 'shadow-sm',
+          message.attachment || message.gif ? 'p-1.5' : 'px-3.5 py-2',
+          !sticker && (mine ? 'rounded-br-md bg-primary text-white' : 'rounded-bl-md bg-surface-2 text-fg'),
           message.deleted && 'italic opacity-80',
           tick === 'failed' && 'cursor-pointer ring-1 ring-danger',
         )}
         onClick={tick === 'failed' ? onRetry : undefined}
       >
         {message.attachment && <AttachmentView attachment={message.attachment} mine={mine} />}
-        {(message.deleted || message.body || !message.attachment) && (
-          <p className={cn('break-words whitespace-pre-wrap', message.attachment && 'px-2 pt-1.5')}>
+        {message.gif && <GifView gif={message.gif} />}
+        {(message.deleted || message.body || (!message.attachment && !message.gif)) && (
+          <p className={cn('break-words whitespace-pre-wrap', (message.attachment || message.gif) && 'px-2 pt-1.5')}>
             {message.deleted ? t('chat.deleted') : message.body}
           </p>
         )}
-        <span className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', message.attachment && 'px-2 pb-0.5', mine ? 'text-white/75' : 'text-muted')}>
+        <span className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', (message.attachment || message.gif) && 'px-2 pb-0.5', mine && !sticker ? 'text-white/75' : 'text-muted')}>
           {tick === 'failed' ? t('chat.notSent') : tick === 'pending' && !navigator.onLine ? t('chat.queued') : clockTime(message.createdAt)}
           {state && <Ticks state={state} />}
         </span>

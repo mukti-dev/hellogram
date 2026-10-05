@@ -21,10 +21,13 @@ function remember(id: string, url: Promise<string>): Promise<string> {
   return url;
 }
 
-export function attachmentUrl(id: string): Promise<string> {
+/** `type` labels the bytes (the server sends files as octet-stream), e.g. so audio can play. */
+export function attachmentUrl(id: string, type?: string): Promise<string> {
   const cached = cache.get(id);
   if (cached) return remember(id, cached);
-  const url = chatApi.downloadAttachment(id).then((blob) => URL.createObjectURL(blob));
+  const url = chatApi
+    .downloadAttachment(id)
+    .then((blob) => URL.createObjectURL(type ? new Blob([blob], { type }) : blob));
   url.catch(() => cache.delete(id));
   return remember(id, url);
 }
@@ -47,19 +50,19 @@ export function clearAttachmentCache(): void {
   cache.clear();
 }
 
-export function useAttachmentUrl(id: string | null): { url: string | null; failed: boolean } {
+export function useAttachmentUrl(id: string | null, type?: string): { url: string | null; failed: boolean } {
   const [state, setState] = useState<{ id: string | null; url: string | null; failed: boolean }>({ id: null, url: null, failed: false });
   useEffect(() => {
     if (!id) return;
     let active = true;
-    attachmentUrl(id).then(
+    attachmentUrl(id, type).then(
       (url) => active && setState({ id, url, failed: false }),
       () => active && setState({ id, url: null, failed: true }),
     );
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, type]);
   return state.id === id ? { url: state.url, failed: state.failed } : { url: null, failed: false };
 }
 
