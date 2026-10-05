@@ -11,15 +11,35 @@ export const systemEventSchema = z.discriminatedUnion('kind', [
 /** A file or image on a message. The bytes are only ever served by `GET /v1/attachments/:id`. */
 export const attachmentSchema = z.object({
   id: z.uuid(),
-  kind: z.enum(['image', 'file']),
+  /** voice: a recorded voice message; sticker: shown without a bubble. GIFs are images (image/gif). */
+  kind: z.enum(['image', 'file', 'voice', 'sticker']),
   fileName: z.string(),
   mimeType: z.string(),
   size: z.number().int(),
   /** Pixels, images only (lets the chat reserve space before the image loads). */
   width: z.number().int().nullable(),
   height: z.number().int().nullable(),
+  /** Voice messages: length and the loudness outline (0–31 per bar) to draw. */
+  durationMs: z.number().int().nullable(),
+  waveform: z.array(z.number().int()).nullable(),
 });
 export type AttachmentDto = z.infer<typeof attachmentSchema>;
+
+/** Where KLIPY serves GIFs; only links to these hosts are accepted. */
+export const GIF_HOSTS = ['static.klipy.com', 'static1.klipy.com', 'static2.klipy.com'] as const;
+
+/**
+ * A GIF from KLIPY's search. Shown by loading `url` straight from KLIPY (their terms): Hellogram
+ * keeps only the link, which is erased with the message like any other content.
+ */
+export const gifSchema = z.object({
+  provider: z.literal('klipy'),
+  slug: z.string().min(1).max(200),
+  url: z.url({ protocol: /^https$/, hostname: new RegExp(`^(${GIF_HOSTS.map((h) => h.replace(/\./g, '\\.')).join('|')})$`) }).max(600),
+  width: z.number().int().min(1).max(4000),
+  height: z.number().int().min(1).max(4000),
+});
+export type GifDto = z.infer<typeof gifSchema>;
 
 export const messageSchema = z.object({
   id: z.uuid(),
@@ -31,6 +51,8 @@ export const messageSchema = z.object({
   body: z.string().nullable(),
   /** Null once the message is deleted or its content has expired. */
   attachment: attachmentSchema.nullable(),
+  /** Null once the message is deleted or its content has expired. */
+  gif: gifSchema.nullable(),
   system: systemEventSchema.nullable(),
   createdAt: z.string(),
   deleted: z.boolean(),
@@ -97,8 +119,11 @@ export const sendMessageBody = z
     body: z.string().max(LIMITS.MESSAGE_MAX + 100).optional(),
     /** From `POST /v1/conversations/:id/attachments`. */
     attachmentId: z.uuid().optional(),
+    /** A GIF picked from KLIPY (instead of text or a file). */
+    gif: gifSchema.optional(),
   })
-  .refine((v) => Boolean(v.body?.trim()) || Boolean(v.attachmentId), { message: 'Message can’t be empty', path: ['body'] });
+  .refine((v) => Boolean(v.body?.trim()) || Boolean(v.attachmentId) || Boolean(v.gif), { message: 'Message can’t be empty', path: ['body'] })
+  .refine((v) => !(v.gif && v.attachmentId), { message: 'Send a GIF or a file, not both', path: ['gif'] });
 export type SendMessageBody = z.infer<typeof sendMessageBody>;
 
 export const updateConversationBody = z

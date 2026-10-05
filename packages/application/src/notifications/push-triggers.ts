@@ -44,7 +44,9 @@ export class PushTriggers {
       onlyIfOffline: true,
       payload: {
         title: view.me.nickname ?? (view.me.counterpartMasked ? 'Unknown' : view.otherPersona.displayName),
-        body: preview(p.message.body) || (p.message.attachment && hasContent(p.message) ? attachmentLabel(p.message.attachment) : ''),
+        body:
+          preview(p.message.body) ||
+          (p.message.attachment && hasContent(p.message) ? attachmentLabel(p.message.attachment) : p.message.gif ? 'GIF' : ''),
         url,
         tag: p.conversationId,
       },

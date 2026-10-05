@@ -82,6 +82,8 @@ enum MessageType {
 enum AttachmentKind {
   image
   file
+  voice
+  sticker
 }
 
 enum CallStatus {
@@ -439,6 +441,8 @@ model Message {
   clientMessageId      String        @db.VarChar(64)
   type                 MessageType   @default(text)
   body                 String?       @db.VarChar(4000)
+  /// A GIF from KLIPY: a link loaded from KLIPY's media host (their terms forbid storing copies).
+  gif                  Json?
   systemPayload        Json?
   suppressed           Boolean       @default(false)
   createdAt            DateTime      @default(now()) @db.Timestamptz
@@ -476,6 +480,9 @@ model Attachment {
   sizeBytes         Int
   width             Int?
   height            Int?
+  /// Voice messages: length, and a coarse loudness outline (0–31 per bar) drawn as the waveform.
+  durationMs        Int?
+  waveform          Json?
   storageKey        String         @unique @db.VarChar(80)
   createdAt         DateTime       @default(now()) @db.Timestamptz
   message           Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)

@@ -2,6 +2,9 @@ import {
   DomainError,
   hasContent,
   inspectFile,
+  normalizeWaveform,
+  type AttachmentPurpose,
+  type InspectedFile,
   isClosed,
   mediaAllowed,
   type Actor,
@@ -50,13 +53,20 @@ export class AttachmentService {
   constructor(private readonly deps: AttachmentDeps) {}
 
   /** Step 1 of sending a file: store it. It becomes visible to the other side only once sent as a message. */
-  async upload(actor: Actor, conversationId: string, input: { bytes: Uint8Array; fileName: string }): Promise<Attachment> {
+  async upload(
+    actor: Actor,
+    conversationId: string,
+    input: { bytes: Uint8Array; fileName: string; purpose?: AttachmentPurpose | undefined; waveform?: unknown },
+  ): Promise<Attachment> {
     const view = await this.deps.chat.view(actor, conversationId);
     if (isClosed(view)) throw new DomainError(ErrorCode.CONVERSATION_CLOSED, 'This chat is closed');
     if (!mediaAllowed(view)) throw mediaOff();
+    const file = inspectFile(input.bytes, input.fileName, input.purpose);
+    return this.store(view.myPersona.id, conversationId, file, file.kind === 'voice' ? normalizeWaveform(input.waveform) : null);
+  }
 
-    const file = inspectFile(input.bytes, input.fileName);
-    const persona = view.myPersona.id;
+  /** Checks the per-number limits, then stores the (already inspected) file encrypted. */
+  async store(persona: string, conversationId: string, file: InspectedFile, waveform: number[] | null = null): Promise<Attachment> {
     const allowed =
       (await this.deps.limiter.hit(`upload:${persona}`, UPLOADS_PER_10_MIN, 600)) &&
       (await this.deps.limiter.hit(`upload-day:${persona}`, UPLOADS_PER_DAY, 86_400));
@@ -73,6 +83,8 @@ export class AttachmentService {
       sizeBytes: file.bytes.byteLength,
       width: file.width,
       height: file.height,
+      durationMs: file.durationMs,
+      waveform,
       storageKey,
     });
     try {

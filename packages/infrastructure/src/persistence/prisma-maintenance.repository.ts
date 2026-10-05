@@ -24,11 +24,11 @@ export class PrismaMaintenanceRepository implements MaintenanceRepository {
              END)`;
   }
 
-  /** Soft-deleted and expired messages lose their text for good; attachments.sweep then destroys their files. */
+  /** Soft-deleted and expired messages lose their text (and GIF link) for good; attachments.sweep then destroys their files. */
   eraseDeletedContent(before: Date, now: Date): Promise<number> {
     return this.db.$executeRaw`
       UPDATE messages
-         SET body = NULL, "contentPurgedAt" = ${now}
+         SET body = NULL, gif = NULL, "contentPurgedAt" = ${now}
        WHERE "contentPurgedAt" IS NULL
          AND ("deletedForEveryoneAt" < ${before} OR "expiredAt" < ${before})`;
   }

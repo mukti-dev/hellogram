@@ -64,6 +64,7 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
         type: 'text' as const,
         body: o.body,
         attachment: null,
+        gif: null,
         system: null,
         createdAt: o.createdAt,
         deleted: false,

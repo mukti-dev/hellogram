@@ -21,6 +21,8 @@ export const toAttachmentDto = (a: MessageAttachment): AttachmentDto => ({
   size: a.sizeBytes,
   width: a.width,
   height: a.height,
+  durationMs: a.durationMs,
+  waveform: a.waveform,
 });
 
 /** A message as seen by `viewerPersonaId`. */
@@ -42,6 +44,7 @@ export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
     type: m.type,
     body: hasContent(m) ? m.body : null,
     attachment: m.attachment && hasContent(m) ? toAttachmentDto(m.attachment) : null,
+    gif: m.gif && hasContent(m) ? m.gif : null,
     system,
     createdAt: m.createdAt.toISOString(),
     deleted,

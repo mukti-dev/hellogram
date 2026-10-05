@@ -1,3 +1,4 @@
+import type { AttachmentKind } from '../chat/attachments.js';
 export interface BlockRecord {
   id: string;
   blockerPersonaId: string;
@@ -33,7 +34,7 @@ export interface EvidenceMessage {
   type: 'text' | 'system' | 'intro';
   body: string | null;
   /** What was shared (details only — the file itself is not copied into the evidence). */
-  attachment?: { kind: 'image' | 'file'; fileName: string; mimeType: string; sizeBytes: number } | null;
+  attachment?: { kind: AttachmentKind; fileName: string; mimeType: string; sizeBytes: number } | null;
   deleted: boolean;
   /** Past the chat's retention (hidden from both sides, text kept for 30 days). */
   expired: boolean;

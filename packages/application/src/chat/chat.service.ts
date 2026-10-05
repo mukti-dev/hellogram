@@ -22,7 +22,7 @@ import {
   type ReachRepository,
   type VaultState,
 } from '@hellogram/domain';
-import { ErrorCode, type Retention } from '@hellogram/shared';
+import { ErrorCode, type GifDto, type Retention } from '@hellogram/shared';
 
 export interface ChatDeps {
   conversations: ConversationRepository;
@@ -121,11 +121,11 @@ export class ChatService {
   async send(
     actor: Actor,
     conversationId: string,
-    input: { clientMessageId: string; body?: string | undefined; attachmentId?: string | undefined },
+    input: { clientMessageId: string; body?: string | undefined; attachmentId?: string | undefined; gif?: GifDto | undefined },
   ): Promise<Message> {
     const view = await this.view(actor, conversationId);
-    // With a file, the text is an optional caption.
-    const body = input.attachmentId ? normalizeCaption(input.body) : normalizeMessageBody(input.body ?? '');
+    // With a file or a GIF, the text is an optional caption.
+    const body = input.attachmentId || input.gif ? normalizeCaption(input.body) : normalizeMessageBody(input.body ?? '');
     if (!(await this.deps.limiter.hit(`msg:${view.myPersona.id}`, MESSAGES_PER_MINUTE, 60))) {
       throw new DomainError(ErrorCode.RATE_LIMITED, 'You’re sending messages too fast. Wait a moment.');
     }
@@ -136,7 +136,7 @@ export class ChatService {
     const decision = evaluateMessage({ now, ...snapshot }, { closed: isClosed(view) });
     if (decision.kind === 'reject') throw new DomainError(decision.code, decision.message);
 
-    if (input.attachmentId && !mediaAllowed(view)) throw mediaOff();
+    if ((input.attachmentId || input.gif) && !mediaAllowed(view)) throw mediaOff();
     const result = await this.deps.conversations.insertMessage({
       conversationId,
       senderPersonaId: view.myPersona.id,
@@ -145,6 +145,7 @@ export class ChatService {
       type: 'text',
       suppressed: decision.kind === 'suppress',
       attachmentId: input.attachmentId ?? null,
+      gif: input.gif ?? null,
     });
     if ('attachmentRejected' in result) {
       throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This file is no longer available. Attach it again.');

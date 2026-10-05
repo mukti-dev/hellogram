@@ -1,7 +1,16 @@
 import { ErrorCode, LIMITS } from '@hellogram/shared';
 import { DomainError } from '../errors/domain-error.js';
+import { readMp4 } from './mp4.js';
 
-export type AttachmentKind = 'image' | 'file';
+export type AttachmentKind = 'image' | 'file' | 'voice' | 'sticker';
+
+/** What the sender says the upload is for; the content still decides whether it's accepted. */
+export type AttachmentPurpose = 'file' | 'voice' | 'sticker';
+
+/** Voice messages: at most this long, and a waveform of at most this many bars (0–31 each). */
+export const VOICE_RULES = { maxMs: 15 * 60 * 1000, maxBars: 64, maxLevel: 31 } as const;
+/** Stickers are small square-ish images. */
+const STICKER_MAX_SIDE = 1024;
 
 /** What a message carries about its file. The storage location never leaves the server. */
 export interface MessageAttachment {
@@ -12,6 +21,9 @@ export interface MessageAttachment {
   sizeBytes: number;
   width: number | null;
   height: number | null;
+  /** Voice messages only. */
+  durationMs: number | null;
+  waveform: number[] | null;
 }
 
 export interface Attachment extends MessageAttachment {
@@ -31,12 +43,13 @@ export interface InspectedFile {
   bytes: Uint8Array;
   width: number | null;
   height: number | null;
+  durationMs: number | null;
 }
 
 const notAllowed = () =>
   new DomainError(
     ErrorCode.FILE_TYPE_NOT_ALLOWED,
-    'This file type can’t be sent. You can share photos (JPG, PNG, WebP, GIF), PDF, Word, Excel, PowerPoint, ZIP and text files.',
+    'This file type can’t be sent. You can share photos (JPG, PNG, WebP, GIF), videos (MP4, MOV), audio (M4A, MP3, WAV), PDF, Word, Excel, PowerPoint, ZIP and text files.',
   );
 
 const ascii = (b: Uint8Array, at: number, length: number) => String.fromCharCode(...b.subarray(at, at + length));
@@ -228,11 +241,13 @@ const extensionOf = (name: string) => /\.([A-Za-z0-9]{1,8})$/.exec(name)?.[1]?.t
  * and strips location and other metadata from images.
  * Anything not on the allow-list is refused — notably HTML, SVG, scripts and executables.
  */
-export function inspectFile(bytes: Uint8Array, claimedName: string): InspectedFile {
+export function inspectFile(bytes: Uint8Array, claimedName: string, purpose: AttachmentPurpose = 'file'): InspectedFile {
   if (bytes.byteLength === 0) throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This file is empty');
   if (bytes.byteLength > LIMITS.ATTACHMENT_MAX_BYTES) {
     throw new DomainError(ErrorCode.FILE_TOO_LARGE, 'Files can be up to 10 MB');
   }
+
+  if (purpose === 'voice') return inspectVoice(bytes);
 
   const image = IMAGE_TYPES.find((type) => type.matches(bytes));
   if (image) {
@@ -240,25 +255,44 @@ export function inspectFile(bytes: Uint8Array, claimedName: string): InspectedFi
     if (!cleaned || cleaned.width > MAX_IMAGE_SIDE || cleaned.height > MAX_IMAGE_SIDE) {
       throw new DomainError(ErrorCode.FILE_TYPE_NOT_ALLOWED, 'This image can’t be read. Try another one.');
     }
+    const sticker = purpose === 'sticker';
+    if (sticker && (image.ext === 'jpg' || cleaned.width > STICKER_MAX_SIDE || cleaned.height > STICKER_MAX_SIDE)) {
+      throw new DomainError(ErrorCode.FILE_TYPE_NOT_ALLOWED, 'This sticker can’t be sent.');
+    }
     return {
-      kind: 'image',
+      kind: sticker ? 'sticker' : 'image',
       mimeType: image.mimeType,
       fileName: sanitizeFileName(claimedName, image.ext),
       bytes: cleaned.bytes,
       width: cleaned.width,
       height: cleaned.height,
+      durationMs: null,
     };
   }
+  if (purpose === 'sticker') throw new DomainError(ErrorCode.FILE_TYPE_NOT_ALLOWED, 'This sticker can’t be sent.');
 
   const ext = extensionOf(claimedName);
-  const file = (mimeType: string, as: string): InspectedFile => ({
+  const file = (mimeType: string, as: string, content = bytes): InspectedFile => ({
     kind: 'file',
     mimeType,
     fileName: sanitizeFileName(claimedName, as),
-    bytes,
+    bytes: content,
     width: null,
     height: null,
+    durationMs: null,
   });
+
+  // Videos and audio from the phone: MP4 / MOV / M4A, with their metadata (location…) blanked.
+  const mp4 = readMp4(bytes);
+  if (mp4) {
+    if (mp4.hasVideo) return mp4.brand === 'qt  ' ? file('video/quicktime', 'mov', mp4.bytes) : file('video/mp4', 'mp4', mp4.bytes);
+    if (mp4.hasAudio) return file('audio/mp4', 'm4a', mp4.bytes);
+    throw notAllowed();
+  }
+  if (ascii(bytes, 0, 3) === 'ID3' || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0 && ext === 'mp3')) {
+    return file('audio/mpeg', 'mp3');
+  }
+  if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 4) === 'WAVE') return file('audio/wav', 'wav');
 
   if (ascii(bytes, 0, 5) === '%PDF-') return file('application/pdf', 'pdf');
   if (startsWith(bytes, [0x50, 0x4b, 0x03, 0x04])) {
@@ -271,5 +305,26 @@ export function inspectFile(bytes: Uint8Array, claimedName: string): InspectedFi
   throw notAllowed();
 }
 
+/** A voice message: an M4A (AAC) recording from the app, with its metadata blanked. */
+function inspectVoice(bytes: Uint8Array): InspectedFile {
+  const mp4 = readMp4(bytes);
+  if (!mp4 || mp4.hasVideo || !mp4.hasAudio || mp4.durationMs <= 0) {
+    throw new DomainError(ErrorCode.FILE_TYPE_NOT_ALLOWED, 'This voice message can’t be read. Record it again.');
+  }
+  if (mp4.durationMs > VOICE_RULES.maxMs) throw new DomainError(ErrorCode.FILE_TOO_LARGE, 'Voice messages can be up to 15 minutes');
+  return { kind: 'voice', mimeType: 'audio/mp4', fileName: 'Voice message.m4a', bytes: mp4.bytes, width: null, height: null, durationMs: mp4.durationMs };
+}
+
+/** The waveform the app drew while recording: up to 64 bars of 0–31. Anything else is dropped. */
+export function normalizeWaveform(input: unknown): number[] | null {
+  if (!Array.isArray(input) || input.length === 0) return null;
+  return input
+    .slice(0, VOICE_RULES.maxBars)
+    .map((v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(Math.max(Math.round(v), 0), VOICE_RULES.maxLevel) : 0));
+}
+
+const isGif = (a: Pick<MessageAttachment, 'mimeType'>) => a.mimeType === 'image/gif';
+
 /** Shown in the inbox and in push notifications when a message has no caption. */
-export const attachmentLabel = (a: Pick<MessageAttachment, 'kind' | 'fileName'>) => (a.kind === 'image' ? 'Photo' : a.fileName);
+export const attachmentLabel = (a: Pick<MessageAttachment, 'kind' | 'fileName' | 'mimeType'>) =>
+  a.kind === 'voice' ? 'Voice message' : a.kind === 'sticker' ? 'Sticker' : a.kind === 'image' ? (isGif(a) ? 'GIF' : 'Photo') : a.fileName;
