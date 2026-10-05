@@ -2,6 +2,7 @@ import { ErrorCode, LIMITS, type Retention } from '@hellogram/shared';
 import { DomainError } from '../errors/domain-error.js';
 import type { Persona } from '../personas/persona.js';
 import type { MessageAttachment } from './attachments.js';
+import type { VaultState } from '../vault/vault.js';
 
 export type MessageType = 'text' | 'system';
 export type MessageStatus = 'sent' | 'delivered' | 'read';
@@ -39,6 +40,9 @@ export interface ConversationMember {
   lastReadMessageId: string | null;
   hiddenAt: Date | null;
   counterpartMasked: boolean;
+  /** Vault, this side only (null = inbox). */
+  vault: VaultState | null;
+  vaultSpaceId: string | null;
 }
 
 export interface Conversation {
@@ -67,6 +71,10 @@ export interface InboxRow extends ConversationView {
 
 export interface InboxFilter {
   personaIds: string[];
+  /** Which vault folders to include ('inbox' = not in the vault). Default: inbox only. */
+  folders?: (VaultState | 'inbox')[] | undefined;
+  /** Hidden spaces this device opened (for the 'hidden' folder). */
+  spaceIds?: string[] | undefined;
   /** One of the user's own labels (case-insensitive). */
   label?: string | undefined;
   unreadOnly?: boolean | undefined;

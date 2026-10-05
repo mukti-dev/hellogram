@@ -7,3 +7,4 @@ export * from './schemas/requests.js';
 export * from './schemas/chat.js';
 export * from './schemas/safety.js';
 export * from './schemas/calls.js';
+export * from './schemas/vault.js';

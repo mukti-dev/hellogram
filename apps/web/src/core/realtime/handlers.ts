@@ -18,6 +18,8 @@ export function registerRealtimeHandlers(socket: Socket, client: QueryClient): (
       void client.invalidateQueries({ queryKey: ['conversations'] });
     },
     'conversation:updated': () => void client.invalidateQueries({ queryKey: ['conversations'] }),
+    // A chat was archived, locked or hidden (from the mobile app): it leaves this inbox.
+    'vault:updated': () => void client.invalidateQueries({ queryKey: ['conversations'] }),
     'blocks:updated': () => void client.invalidateQueries({ queryKey: ['blocks'] }),
   };
   for (const [event, handler] of Object.entries(base)) socket.on(event, handler);

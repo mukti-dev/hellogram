@@ -15,11 +15,18 @@ export class ChatController {
 
   inbox = async (
     request: FastifyRequest<{
-      Querystring: { personaId?: string; label?: string; unread?: boolean; q?: string; cursor?: string };
+      Querystring: {
+        folder?: 'inbox' | 'archived' | 'locked' | 'hidden';
+        personaId?: string;
+        label?: string;
+        unread?: boolean;
+        q?: string;
+        cursor?: string;
+      };
     }>,
   ) => {
-    const { personaId, label, unread, q, cursor } = request.query;
-    const result = await this.chat.inbox(actorOf(request), { personaId, label, unreadOnly: unread, query: q, cursor });
+    const { folder, personaId, label, unread, q, cursor } = request.query;
+    const result = await this.chat.inbox(actorOf(request), { folder, personaId, label, unreadOnly: unread, query: q, cursor });
     return {
       items: result.items.map((row) => toConversationDto(row, this.avatarUrl)),
       nextCursor: result.nextCursor,

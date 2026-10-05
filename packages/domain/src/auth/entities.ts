@@ -1,4 +1,5 @@
 import type { Gender } from '@hellogram/shared';
+import type { VaultAccess } from '../vault/vault.js';
 
 export type AccountStatus = 'active' | 'suspended' | 'banned' | 'pending_deletion' | 'deleted';
 
@@ -67,6 +68,8 @@ export interface Actor {
   sessionId: string;
   /** Locked personas this device unlocked with a valid X-Persona-Unlock token (rule 25). */
   unlockedPersonaIds?: ReadonlySet<string>;
+  /** Locked chats and hidden spaces this device opened with X-Vault-Unlock tokens. */
+  vault?: VaultAccess;
 }
 
 /** Request metadata used for sessions and abuse limits (IP is hashed before storage). */

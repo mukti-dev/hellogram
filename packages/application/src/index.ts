@@ -17,3 +17,4 @@ export * from './notifications/push-triggers.js';
 export * from './compliance/compliance.service.js';
 export * from './admin/admin.service.js';
 export * from './auth/phone-proof.js';
+export * from './vault/vault.service.js';

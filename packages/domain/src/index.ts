@@ -24,3 +24,4 @@ export * from './billing/billing.js';
 export * from './notifications/ports.js';
 export * from './compliance/ports.js';
 export * from './admin/admin.js';
+export * from './vault/vault.js';

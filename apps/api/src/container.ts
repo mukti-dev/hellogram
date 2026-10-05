@@ -16,6 +16,7 @@ import {
   PersonaService,
   PhoneProofChecker,
   PinService,
+  VaultService,
   RequestService,
   type RequestTxRepos,
 } from '@hellogram/application';
@@ -53,8 +54,10 @@ import {
   SmtpEmailProvider,
   TurnstileVerifier,
   PrismaPinRepository,
+  PrismaVaultRepository,
   RedisEphemeralStore,
   RedisUnlockTokenStore,
+  RedisVaultTokenStore,
   PrismaTrustedDeviceRepository,
   LocalDiskStorage,
   PrismaBlockRepository,
@@ -99,6 +102,7 @@ export interface AppContainer {
   attachmentService: AttachmentService;
   safetyService: SafetyService;
   pinService: PinService;
+  vaultService: VaultService;
   callService: CallService;
   billingService: BillingService;
   notificationService: NotificationService;
@@ -307,6 +311,20 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     events,
     clock,
   });
+  const vaultService = new VaultService({
+    vault: new PrismaVaultRepository(prisma),
+    conversations,
+    personas,
+    accounts: repos.accounts,
+    hasher: new Argon2PinHasher(),
+    tokens: new RedisVaultTokenStore(redis),
+    otp,
+    proofs,
+    limiter,
+    crypto,
+    events,
+    clock,
+  });
   const callService = new CallService({
     calls: new PrismaCallRepository(prisma),
     personas,
@@ -395,6 +413,7 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     attachmentService,
     safetyService,
     pinService,
+    vaultService,
     callService,
     billingService,
     notificationService,

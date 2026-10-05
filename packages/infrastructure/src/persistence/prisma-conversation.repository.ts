@@ -11,6 +11,7 @@ import type {
   NewMessage,
   Page,
   SystemPayload,
+  VaultState,
 } from '@hellogram/domain';
 import type { Retention } from '@hellogram/shared';
 import { decodeCursor, encodeCursor } from './cursor.js';
@@ -25,6 +26,8 @@ const memberSelect = {
   lastReadMessageId: true,
   hiddenAt: true,
   counterpartMasked: true,
+  vault: true,
+  vaultSpaceId: true,
   persona: { select: personaSelect },
 } as const;
 
@@ -105,6 +108,8 @@ export class PrismaConversationRepository implements ConversationRepository {
     if (filter.personaIds.length === 0) return { items: [], nextCursor: null };
     const cursor = decodeCursor(filter.cursor ?? null);
     const q = filter.query?.trim() ? `%${filter.query.trim().replace(/[%_\\]/g, (c) => `\\${c}`)}%` : null;
+    const folders = filter.folders ?? ['inbox'];
+    const spaceIds = filter.spaceIds ?? [];
 
     const rows = await this.db.$queryRaw<{ conversationId: string; personaId: string; lastMessageId: string | null; sortAt: Date; unread: number }[]>`
       SELECT * FROM (
@@ -133,6 +138,9 @@ export class PrismaConversationRepository implements ConversationRepository {
         ) lm ON true
         WHERE cm."personaId" = ANY(${filter.personaIds}::uuid[])
           AND cm."hiddenAt" IS NULL
+          AND ((cm.vault IS NULL AND 'inbox' = ANY(${folders}::text[]))
+               OR (cm.vault::text = ANY(${folders}::text[])
+                   AND (cm.vault <> 'hidden' OR cm."vaultSpaceId" = ANY(${spaceIds}::uuid[]))))
           AND (${filter.label ?? null}::text IS NULL OR lower(mp."labelName") = lower(${filter.label ?? null}::text))
           AND (${q}::text IS NULL OR cm.nickname ILIKE ${q}::text
                OR (NOT cm."counterpartMasked" AND op."displayName" ILIKE ${q}::text))
@@ -369,8 +377,8 @@ export class PrismaConversationRepository implements ConversationRepository {
     });
   }
 
-  async countUnreadConversations(personaIds: string[]): Promise<number> {
-    const page = await this.listInbox({ personaIds, unreadOnly: true, limit: 500 });
+  async countUnreadConversations(personaIds: string[], folders: (VaultState | 'inbox')[]): Promise<number> {
+    const page = await this.listInbox({ personaIds, folders, unreadOnly: true, limit: 500 });
     return page.items.length;
   }
 }

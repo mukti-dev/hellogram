@@ -49,6 +49,10 @@ export const chatCounterpartSchema = z.object({
 });
 export type ChatCounterpartDto = z.infer<typeof chatCounterpartSchema>;
 
+/** Where a chat sits for me: the normal inbox (null) or the vault. */
+export const vaultStateSchema = z.enum(['archived', 'locked', 'hidden']);
+export type VaultState = z.infer<typeof vaultStateSchema>;
+
 export const conversationSchema = z.object({
   id: z.uuid(),
   me: ownPersonaBriefSchema,
@@ -64,6 +68,7 @@ export const conversationSchema = z.object({
   unread: z.number().int(),
   lastMessage: messageSchema.nullable(),
   lastActivityAt: z.string(),
+  vault: vaultStateSchema.nullable(),
 });
 export type ConversationDto = z.infer<typeof conversationSchema>;
 

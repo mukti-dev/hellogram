@@ -2,6 +2,7 @@ import type { Retention } from '@hellogram/shared';
 import type { Page } from '../requests/ports.js';
 import type { Attachment } from './attachments.js';
 import type { ConversationView, InboxFilter, InboxRow, Message, SystemPayload } from './chat.js';
+import type { VaultState } from '../vault/vault.js';
 
 export interface NewMessage {
   conversationId: string;
@@ -75,5 +76,5 @@ export interface ConversationRepository {
   applyBlock(conversationId: string, blockerPersonaId: string, blockedPersonaId: string, at: Date): Promise<void>;
   removeBlock(conversationId: string): Promise<void>;
   /** Unread chats across personas, for the nav badge. */
-  countUnreadConversations(personaIds: string[]): Promise<number>;
+  countUnreadConversations(personaIds: string[], folders: (VaultState | 'inbox')[]): Promise<number>;
 }

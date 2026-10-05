@@ -104,7 +104,8 @@ export class CallService {
           callId: call.id,
           conversationId,
           calleePersonaId: view.otherPersona.id,
-          calleeLocked: view.otherPersona.hasPin,
+          // A locked or hidden chat on their side rings without the name, like a locked number.
+          calleeLocked: view.otherPersona.hasPin || view.other.vault !== null,
           caller: view.myPersona,
           callee: view.otherPersona,
           declineToken: this.declineToken(call.id),
