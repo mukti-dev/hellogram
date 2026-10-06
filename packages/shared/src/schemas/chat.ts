@@ -1,10 +1,16 @@
 import { z } from 'zod';
-import { LIMITS } from '../constants.js';
-import { labelIconSchema, retentionSchema } from './personas.js';
+import { CHAT_RETENTION_OPTIONS, LIMITS } from '../constants.js';
+import { labelIconSchema } from './personas.js';
 import { ownPersonaBriefSchema } from './requests.js';
 
+/** How long a chat keeps messages: a preset, or "custom" with `retentionMinutes`. */
+export const chatRetentionSchema = z.enum(CHAT_RETENTION_OPTIONS);
+
+export const retentionMinutesSchema = z.number().int().min(LIMITS.CUSTOM_RETENTION_MIN_MINUTES).max(LIMITS.CUSTOM_RETENTION_MAX_MINUTES);
+
 export const systemEventSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('retention_changed'), byMe: z.boolean(), value: retentionSchema }),
+  /** `minutes` is set only for "custom". */
+  z.object({ kind: z.literal('retention_changed'), byMe: z.boolean(), value: chatRetentionSchema, minutes: z.number().int().nullable() }),
   z.object({ kind: z.literal('number_unavailable') }),
 ]);
 
@@ -41,6 +47,20 @@ export const gifSchema = z.object({
 });
 export type GifDto = z.infer<typeof gifSchema>;
 
+/**
+ * The message a reply points to, as a short quote. `available: false` once that message is deleted
+ * or its content has expired (then `text` is null and the quote says so).
+ */
+export const replyPreviewSchema = z.object({
+  id: z.uuid(),
+  mine: z.boolean(),
+  kind: z.enum(['text', 'image', 'file', 'voice', 'sticker', 'gif']),
+  /** The text (cut to REPLY_PREVIEW_MAX), or a file's name / photo caption; null when there's none. */
+  text: z.string().nullable(),
+  available: z.boolean(),
+});
+export type ReplyPreviewDto = z.infer<typeof replyPreviewSchema>;
+
 export const messageSchema = z.object({
   id: z.uuid(),
   conversationId: z.uuid(),
@@ -54,6 +74,8 @@ export const messageSchema = z.object({
   /** Null once the message is deleted or its content has expired. */
   gif: gifSchema.nullable(),
   system: systemEventSchema.nullable(),
+  /** The message this one replies to (same chat). */
+  replyTo: replyPreviewSchema.nullable(),
   createdAt: z.string(),
   deleted: z.boolean(),
   /** Ticks, only on my own messages. */
@@ -83,7 +105,9 @@ export const conversationSchema = z.object({
   nickname: z.string().nullable(),
   /** "This number is no longer available". */
   unavailable: z.boolean(),
-  retention: retentionSchema,
+  retention: chatRetentionSchema,
+  /** Only for retention "custom": how many minutes messages are kept. */
+  retentionMinutes: z.number().int().nullable(),
   mutedUntil: z.string().nullable(),
   /** Photos and files are allowed only when both numbers allow them. */
   mediaAllowed: z.boolean(),
@@ -121,6 +145,8 @@ export const sendMessageBody = z
     attachmentId: z.uuid().optional(),
     /** A GIF picked from KLIPY (instead of text or a file). */
     gif: gifSchema.optional(),
+    /** Reply to this message (must be in the same chat and still have its content). */
+    replyToId: z.uuid().optional(),
   })
   .refine((v) => Boolean(v.body?.trim()) || Boolean(v.attachmentId) || Boolean(v.gif), { message: 'Message can’t be empty', path: ['body'] })
   .refine((v) => !(v.gif && v.attachmentId), { message: 'Send a GIF or a file, not both', path: ['gif'] });
@@ -130,7 +156,13 @@ export const updateConversationBody = z
   .object({
     nickname: z.string().max(LIMITS.NICKNAME_MAX + 20).nullable(),
     mutedUntil: z.iso.datetime().nullable(),
-    retention: retentionSchema,
+    retention: chatRetentionSchema,
+    /** Required with retention "custom", ignored otherwise. */
+    retentionMinutes: retentionMinutesSchema,
   })
-  .partial();
+  .partial()
+  .refine((v) => v.retention !== 'custom' || v.retentionMinutes !== undefined, {
+    message: 'Choose how long to keep messages',
+    path: ['retentionMinutes'],
+  });
 export type UpdateConversationBody = z.infer<typeof updateConversationBody>;

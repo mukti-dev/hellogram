@@ -1,4 +1,4 @@
-import { RETENTION_OPTIONS, type ConversationDto, type Retention } from '@hellogram/shared';
+import { LIMITS, RETENTION_OPTIONS, type ConversationDto, type Retention } from '@hellogram/shared';
 import { Avatar, Button, Dialog, Switch, TextField, cn } from '@hellogram/ui';
 import { Bell, Pencil, Phone, Trash2, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -6,6 +6,7 @@ import { t } from '../../../i18n/t.js';
 
 import { SafetyRows } from '../../safety/components/SafetyRows.js';
 import { useClearChat, useUpdateConversation } from '../model/queries.js';
+import { formatMinutes, validCustomMinutes } from '../model/retention.js';
 import { chatTitle } from './ConversationRow.js';
 import { NumberLabel } from '../../numbers/components/NumberLabel.js';
 
@@ -35,6 +36,89 @@ function Row({ icon, title, hint, danger, onClick, right }: {
   );
 }
 
+function RadioDot({ on }: { on: boolean }) {
+  return (
+    <span className={cn('inline-flex size-5 shrink-0 items-center justify-center rounded-full border-2', on ? 'border-primary' : 'border-border')}>
+      {on && <span className="size-2.5 rounded-full bg-primary" />}
+    </span>
+  );
+}
+
+/** Hours + minutes for a chat's own history time (5 minutes … 30 days). */
+function CustomHistoryForm({
+  initialMinutes,
+  disabled,
+  onSave,
+  onCancel,
+}: {
+  initialMinutes: number | null;
+  disabled: boolean;
+  onSave: (minutes: number) => void;
+  onCancel: () => void;
+}) {
+  const start = initialMinutes ?? 60;
+  const [hours, setHours] = useState(String(Math.floor(start / 60)));
+  const [minutes, setMinutes] = useState(String(start % 60));
+  const [error, setError] = useState<string | null>(null);
+  const maxHours = Math.floor(LIMITS.CUSTOM_RETENTION_MAX_MINUTES / 60);
+  const digits = (v: string) => v.replace(/\D/g, '').slice(0, 4);
+
+  return (
+    <form
+      className="mt-1 mb-2 flex flex-col gap-2 rounded-md border border-border bg-surface-2 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const total = Number(hours || 0) * 60 + Number(minutes || 0);
+        if (!validCustomMinutes(total)) {
+          setError(t('chat.customRangeError'));
+          return;
+        }
+        setError(null);
+        onSave(total);
+      }}
+    >
+      <div>
+        <p className="text-sm font-medium">{t('chat.customHistory')}</p>
+        <p className="text-xs text-muted">{t('chat.customHistoryHint')}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <TextField
+          id="custom-history-hours"
+          label={t('chat.hours')}
+          inputMode="numeric"
+          min={0}
+          max={maxHours}
+          value={hours}
+          onChange={(e) => setHours(digits(e.target.value))}
+          autoFocus
+        />
+        <TextField
+          id="custom-history-minutes"
+          label={t('chat.minutes')}
+          inputMode="numeric"
+          min={0}
+          max={59}
+          value={minutes}
+          onChange={(e) => setMinutes(digits(e.target.value))}
+        />
+      </div>
+      {error && (
+        <p role="alert" className="text-xs font-medium text-danger">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button type="submit" variant="gradient" size="sm" disabled={disabled}>
+          {t('numbers.save')}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /** Screen 10 / desktop right panel: chat settings. */
 export function ChatDetailsPanel({
   conversation: c,
@@ -50,6 +134,8 @@ export function ChatDetailsPanel({
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(c.nickname ?? '');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [editingCustom, setEditingCustom] = useState(false);
+  const isCustom = c.retention === 'custom';
   const muted = Boolean(c.mutedUntil && new Date(c.mutedUntil) > new Date());
   const otherName = c.counterpart.displayName;
 
@@ -102,17 +188,42 @@ export function ChatDetailsPanel({
               key={option}
               type="button"
               role="radio"
-              aria-checked={c.retention === option}
+              aria-checked={c.retention === option && !editingCustom}
               disabled={c.unavailable || update.isPending}
-              onClick={() => update.mutate({ retention: option })}
+              onClick={() => {
+                setEditingCustom(false);
+                update.mutate({ retention: option });
+              }}
               className="flex h-10 items-center gap-3 rounded-md px-1 text-left text-sm hover:bg-surface-2 disabled:opacity-60"
             >
-              <span className={cn('inline-flex size-5 items-center justify-center rounded-full border-2', c.retention === option ? 'border-primary' : 'border-border')}>
-                {c.retention === option && <span className="size-2.5 rounded-full bg-primary" />}
-              </span>
+              <RadioDot on={c.retention === option && !editingCustom} />
               {t(`numbers.retention.${option}`)}
             </button>
           ))}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={isCustom || editingCustom}
+            disabled={c.unavailable || update.isPending}
+            onClick={() => setEditingCustom(true)}
+            className="flex h-10 items-center gap-3 rounded-md px-1 text-left text-sm hover:bg-surface-2 disabled:opacity-60"
+          >
+            <RadioDot on={isCustom || editingCustom} />
+            <span className="flex-1">{t('numbers.retention.custom')}</span>
+            {isCustom && c.retentionMinutes && !editingCustom && (
+              <span className="text-xs text-muted">{formatMinutes(c.retentionMinutes)}</span>
+            )}
+          </button>
+          {editingCustom && (
+            <CustomHistoryForm
+              initialMinutes={c.retentionMinutes}
+              disabled={c.unavailable || update.isPending}
+              onCancel={() => setEditingCustom(false)}
+              onSave={(minutes) =>
+                update.mutate({ retention: 'custom', retentionMinutes: minutes }, { onSuccess: () => setEditingCustom(false) })
+              }
+            />
+          )}
         </div>
         <p className="mt-2 rounded-md bg-primary-soft px-3 py-2 text-xs">{t('chat.appliesBoth', { name: otherName })}</p>
       </div>

@@ -38,6 +38,8 @@ export const ErrorCode = {
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   FILE_TYPE_NOT_ALLOWED: 'FILE_TYPE_NOT_ALLOWED',
   MEDIA_NOT_ALLOWED: 'MEDIA_NOT_ALLOWED',
+  /** The message being replied to isn't in this chat, or was deleted / has expired / is a system notice. */
+  REPLY_NOT_AVAILABLE: 'REPLY_NOT_AVAILABLE',
   /** The chat is locked with the chat lock PIN; details.conversationId. */
   CHAT_LOCKED: 'CHAT_LOCKED',
   /** No chat lock PIN set yet. */

@@ -13,7 +13,7 @@ import type {
   SystemPayload,
   VaultState,
 } from '@hellogram/domain';
-import type { Retention } from '@hellogram/shared';
+import type { ChatRetention } from '@hellogram/shared';
 import { decodeCursor, encodeCursor } from './cursor.js';
 import { personaSelect, toPersona } from './mappers.js';
 import type { Db } from './prisma-types.js';
@@ -34,6 +34,7 @@ const memberSelect = {
 const conversationSelect = {
   id: true,
   retention: true,
+  retentionMinutes: true,
   retentionChangedById: true,
   retentionChangedAt: true,
   lastMessageAt: true,
@@ -61,23 +62,42 @@ const messageSelect = {
   attachment: {
     select: { id: true, kind: true, mimeType: true, fileName: true, sizeBytes: true, width: true, height: true, durationMs: true, waveform: true },
   },
+  // The quoted message comes in the same query (a join), so lists never do one lookup per reply.
+  replyTo: {
+    select: {
+      id: true,
+      senderPersonaId: true,
+      type: true,
+      body: true,
+      gif: true,
+      suppressed: true,
+      deletedForEveryoneAt: true,
+      expiredAt: true,
+      contentPurgedAt: true,
+      attachment: { select: { kind: true, fileName: true } },
+    },
+  },
 } as const;
 
-type MessageRow = Omit<Message, 'systemPayload' | 'attachment' | 'gif'> & {
+type MessageRow = Omit<Message, 'systemPayload' | 'attachment' | 'gif' | 'replyTo'> & {
   systemPayload: Prisma.JsonValue;
   gif: Prisma.JsonValue;
   attachment: (Omit<NonNullable<Message['attachment']>, 'waveform'> & { waveform: Prisma.JsonValue }) | null;
+  replyTo: (Omit<NonNullable<Message['replyTo']>, 'hasGif'> & { gif: Prisma.JsonValue }) | null;
 };
 type ConversationRow = Prisma.ConversationGetPayload<{ select: typeof conversationSelect }>;
 
-const toMessage = (row: MessageRow): Message => ({
+const toMessage = ({ replyTo, ...row }: MessageRow): Message => ({
   ...row,
+  replyTo: replyTo ? { ...omitGif(replyTo), hasGif: replyTo.gif !== null } : null,
   systemPayload: (row.systemPayload as SystemPayload | null) ?? null,
   gif: (row.gif as Message['gif']) ?? null,
   attachment: row.attachment
     ? { ...row.attachment, waveform: Array.isArray(row.attachment.waveform) ? (row.attachment.waveform as number[]) : null }
     : null,
 });
+
+const omitGif = <T extends { gif: unknown }>({ gif: _gif, ...rest }: T): Omit<T, 'gif'> => rest;
 
 function toView(row: ConversationRow, myPersonaId: string): ConversationView | null {
   const me = row.members.find((m) => m.personaId === myPersonaId);
@@ -125,11 +145,13 @@ export class PrismaConversationRepository implements ConversationRepository {
     const rows = await this.db.$queryRaw<{ conversationId: string; personaId: string; lastMessageId: string | null; sortAt: Date; unread: number }[]>`
       SELECT * FROM (
         SELECT cm."conversationId", cm."personaId", lm.id AS "lastMessageId",
-               COALESCE(lm."createdAt", c."createdAt") AS "sortAt",
+               -- Once every message has disappeared, the chat keeps its place (lastMessageAt).
+               COALESCE(lm."createdAt", c."lastMessageAt", c."createdAt") AS "sortAt",
                (SELECT count(*)::int FROM messages u
                  WHERE u."conversationId" = cm."conversationId"
                    AND u."senderPersonaId" <> cm."personaId"
                    AND u.suppressed = false AND u.type = 'text' AND u."deletedForEveryoneAt" IS NULL
+                   AND u."expiredAt" IS NULL
                    AND (cm."clearedBefore" IS NULL OR u."createdAt" > cm."clearedBefore")
                    AND (cm."lastReadMessageId" IS NULL
                         OR u."createdAt" > (SELECT r."createdAt" FROM messages r WHERE r.id = cm."lastReadMessageId"))
@@ -144,6 +166,7 @@ export class PrismaConversationRepository implements ConversationRepository {
           WHERE m."conversationId" = cm."conversationId"
             AND (m.suppressed = false OR m."senderPersonaId" = cm."personaId")
             AND (cm."clearedBefore" IS NULL OR m."createdAt" > cm."clearedBefore")
+            AND m."expiredAt" IS NULL
             AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h."messageId" = m.id AND h."personaId" = cm."personaId")
           ORDER BY m."createdAt" DESC, m.id DESC LIMIT 1
         ) lm ON true
@@ -200,6 +223,8 @@ export class PrismaConversationRepository implements ConversationRepository {
     const rows = await this.db.message.findMany({
       where: {
         conversationId,
+        // Past the chat's retention: gone from the chat (the worker sets expiredAt every minute).
+        expiredAt: null,
         AND: [
           visibleTo(personaId, member.clearedBefore),
           c ? { OR: [{ createdAt: { lt: c.createdAt } }, { createdAt: c.createdAt, id: { lt: c.id } }] } : {},
@@ -224,6 +249,7 @@ export class PrismaConversationRepository implements ConversationRepository {
       systemPayload: message.systemPayload ?? Prisma.JsonNull,
       gif: message.gif ?? Prisma.DbNull,
       suppressed: message.suppressed,
+      replyToId: message.replyToId ?? null,
     };
     if (message.attachmentId) {
       // One statement: the message only exists if the upload is the sender's, from this chat, and unsent.
@@ -364,10 +390,15 @@ export class PrismaConversationRepository implements ConversationRepository {
     });
   }
 
-  async setRetention(conversationId: string, retention: Retention, byPersonaId: string, at: Date): Promise<void> {
+  async setRetention(conversationId: string, retention: ChatRetention, minutes: number | null, byPersonaId: string, at: Date): Promise<void> {
     await this.db.conversation.update({
       where: { id: conversationId },
-      data: { retention, retentionChangedById: byPersonaId, retentionChangedAt: at },
+      data: {
+        retention,
+        retentionMinutes: retention === 'custom' ? minutes : null,
+        retentionChangedById: byPersonaId,
+        retentionChangedAt: at,
+      },
     });
   }
 

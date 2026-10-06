@@ -3,7 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { chatSocketHandlers } from '../../src/realtime/chat-handlers.js';
 import { attachRealtime } from '../../src/realtime/gateway.js';
-import { connectedPair, sendMessage } from './fixtures.js';
+import { clientId, connectedPair, sendMessage } from './fixtures.js';
 import { createHarness, type Harness } from './harness.js';
 
 let h: Harness;
@@ -70,6 +70,20 @@ describe('realtime chat', () => {
     const read = next<{ upToMessageId: string }>(visitorSocket, 'message:read');
     ownerSocket.emit('message:read', { conversationId, upToMessageId: message.id });
     expect((await read).upToMessageId).toBe(message.id);
+  });
+
+  it('live replies carry the quote, seen from the recipient’s side', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const original = await sendMessage(owner, conversationId, 'Original question');
+    const ownerSocket = await connect(owner.token);
+    const incoming = next<{ message: MessageDto }>(ownerSocket, 'message:new');
+    await visitor.request({
+      method: 'POST',
+      url: `/v1/conversations/${conversationId}/messages`,
+      payload: { clientMessageId: clientId(), body: 'An answer', replyToId: original.body.id },
+    });
+    const { message } = await incoming;
+    expect(message.replyTo).toEqual({ id: original.body.id, mine: true, kind: 'text', text: 'Original question', available: true });
   });
 
   it('a locked number gets content-free notifications (rule 27)', async () => {

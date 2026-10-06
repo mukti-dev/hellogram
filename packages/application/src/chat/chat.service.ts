@@ -1,11 +1,13 @@
 import {
   DomainError,
   assertCanDeleteForEveryone,
+  assertCanReplyTo,
   evaluateMessage,
   isClosed,
   isReadable,
   mediaAllowed,
   normalizeCaption,
+  normalizeChatRetention,
   normalizeMessageBody,
   normalizeNickname,
   type Actor,
@@ -22,7 +24,7 @@ import {
   type ReachRepository,
   type VaultState,
 } from '@hellogram/domain';
-import { ErrorCode, type GifDto, type Retention } from '@hellogram/shared';
+import { ErrorCode, type ChatRetention, type GifDto } from '@hellogram/shared';
 
 export interface ChatDeps {
   conversations: ConversationRepository;
@@ -121,7 +123,13 @@ export class ChatService {
   async send(
     actor: Actor,
     conversationId: string,
-    input: { clientMessageId: string; body?: string | undefined; attachmentId?: string | undefined; gif?: GifDto | undefined },
+    input: {
+      clientMessageId: string;
+      body?: string | undefined;
+      attachmentId?: string | undefined;
+      gif?: GifDto | undefined;
+      replyToId?: string | undefined;
+    },
   ): Promise<Message> {
     const view = await this.view(actor, conversationId);
     // With a file or a GIF, the text is an optional caption.
@@ -137,6 +145,10 @@ export class ChatService {
     if (decision.kind === 'reject') throw new DomainError(decision.code, decision.message);
 
     if ((input.attachmentId || input.gif) && !mediaAllowed(view)) throw mediaOff();
+    if (input.replyToId) {
+      // Only a message this side can see, of this chat, that still has its content.
+      assertCanReplyTo(await this.deps.conversations.findVisibleMessage(input.replyToId, view.myPersona.id), conversationId);
+    }
     const result = await this.deps.conversations.insertMessage({
       conversationId,
       senderPersonaId: view.myPersona.id,
@@ -146,6 +158,7 @@ export class ChatService {
       suppressed: decision.kind === 'suppress',
       attachmentId: input.attachmentId ?? null,
       gif: input.gif ?? null,
+      replyToId: input.replyToId ?? null,
     });
     if ('attachmentRejected' in result) {
       throw new DomainError(ErrorCode.VALIDATION_FAILED, 'This file is no longer available. Attach it again.');
@@ -224,7 +237,13 @@ export class ChatService {
   async updateSettings(
     actor: Actor,
     conversationId: string,
-    patch: { nickname?: string | null | undefined; mutedUntil?: Date | null | undefined; retention?: Retention | undefined },
+    patch: {
+      nickname?: string | null | undefined;
+      mutedUntil?: Date | null | undefined;
+      retention?: ChatRetention | undefined;
+      /** Required with retention "custom". */
+      retentionMinutes?: number | undefined;
+    },
   ): Promise<ConversationView> {
     const view = await this.view(actor, conversationId);
     const now = this.deps.clock.now();
@@ -241,23 +260,27 @@ export class ChatService {
       });
     }
 
-    if (patch.retention !== undefined && patch.retention !== view.conversation.retention) {
-      if (isClosed(view)) throw new DomainError(ErrorCode.CONVERSATION_CLOSED, 'This chat is closed');
-      await this.changeRetention(view, patch.retention, now);
+    if (patch.retention !== undefined) {
+      const next = normalizeChatRetention(patch.retention, patch.retentionMinutes);
+      const current = view.conversation;
+      if (next.retention !== current.retention || next.minutes !== (current.retentionMinutes ?? null)) {
+        if (isClosed(view)) throw new DomainError(ErrorCode.CONVERSATION_CLOSED, 'This chat is closed');
+        await this.changeRetention(view, next.retention, next.minutes, now);
+      }
     }
     return this.view(actor, conversationId);
   }
 
   /** Rule 21: either member can change it; both get a system message. */
-  private async changeRetention(view: ConversationView, retention: Retention, now: Date): Promise<void> {
-    await this.deps.conversations.setRetention(view.conversation.id, retention, view.myPersona.id, now);
+  private async changeRetention(view: ConversationView, retention: ChatRetention, minutes: number | null, now: Date): Promise<void> {
+    await this.deps.conversations.setRetention(view.conversation.id, retention, minutes, view.myPersona.id, now);
     const result = await this.deps.conversations.insertMessage({
       conversationId: view.conversation.id,
       senderPersonaId: view.myPersona.id,
       clientMessageId: `retention:${now.getTime()}`,
       body: null,
       type: 'system',
-      systemPayload: { kind: 'retention_changed', byPersonaId: view.myPersona.id, value: retention },
+      systemPayload: { kind: 'retention_changed', byPersonaId: view.myPersona.id, value: retention, minutes },
       // Deliberately never suppressed: a shared setting that silently changed would reveal a block.
       suppressed: false,
     });

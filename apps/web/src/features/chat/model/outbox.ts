@@ -1,3 +1,4 @@
+import type { ReplyPreviewDto } from '@hellogram/shared';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
@@ -10,6 +11,8 @@ export interface OutboxItem {
   clientMessageId: string;
   conversationId: string;
   body: string;
+  /** The message this one replies to, with its quote for showing it before it's sent. */
+  replyTo?: ReplyPreviewDto | undefined;
   createdAt: string;
   state: 'sending' | 'queued' | 'failed';
   error?: string;

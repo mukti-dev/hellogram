@@ -1,7 +1,7 @@
-import { ErrorCode, LIMITS, type GifDto, type Retention } from '@hellogram/shared';
+import { ErrorCode, LIMITS, type ChatRetention, type GifDto, type ReplyPreviewDto, type Retention } from '@hellogram/shared';
 import { DomainError } from '../errors/domain-error.js';
 import type { Persona } from '../personas/persona.js';
-import type { MessageAttachment } from './attachments.js';
+import type { AttachmentKind, MessageAttachment } from './attachments.js';
 import type { VaultState } from '../vault/vault.js';
 
 export type MessageType = 'text' | 'system';
@@ -28,10 +28,27 @@ export interface Message {
   expiredAt: Date | null;
   /** Text and file erased for good. */
   contentPurgedAt: Date | null;
+  /** The message this one replies to (loaded with it, never a separate query). */
+  replyTo: ReplyRef | null;
+}
+
+/** What a reply needs to know about the message it quotes. */
+export interface ReplyRef {
+  id: string;
+  senderPersonaId: string;
+  type: MessageType;
+  body: string | null;
+  attachment: { kind: AttachmentKind; fileName: string } | null;
+  hasGif: boolean;
+  suppressed: boolean;
+  deletedForEveryoneAt: Date | null;
+  expiredAt: Date | null;
+  contentPurgedAt: Date | null;
 }
 
 export type SystemPayload =
-  | { kind: 'retention_changed'; byPersonaId: string; value: Retention }
+  /** `minutes` only for "custom" (older rows have no `minutes`). */
+  | { kind: 'retention_changed'; byPersonaId: string; value: ChatRetention; minutes?: number | null }
   | { kind: 'number_unavailable' };
 
 export interface ConversationMember {
@@ -49,7 +66,9 @@ export interface ConversationMember {
 
 export interface Conversation {
   id: string;
-  retention: Retention;
+  retention: ChatRetention;
+  /** Only for retention "custom". */
+  retentionMinutes: number | null;
   retentionChangedById: string | null;
   retentionChangedAt: Date | null;
   lastMessageAt: Date | null;
@@ -143,6 +162,55 @@ export const RETENTION_MS: Record<Retention, number | null> = {
   d7: 7 * 24 * HOUR,
   h24: 24 * HOUR,
 };
+
+/** How long a chat keeps messages, in ms (null = forever). Custom uses the chat's own minutes. */
+export function retentionMs(retention: ChatRetention, minutes: number | null): number | null {
+  if (retention !== 'custom') return RETENTION_MS[retention];
+  return minutes === null ? null : minutes * 60 * 1000;
+}
+
+/** A chat's history setting as stored: presets carry no minutes; custom must be 5 min … 30 days. */
+export function normalizeChatRetention(
+  retention: ChatRetention,
+  minutes: number | null | undefined,
+): { retention: ChatRetention; minutes: number | null } {
+  if (retention !== 'custom') return { retention, minutes: null };
+  if (
+    typeof minutes !== 'number' ||
+    !Number.isInteger(minutes) ||
+    minutes < LIMITS.CUSTOM_RETENTION_MIN_MINUTES ||
+    minutes > LIMITS.CUSTOM_RETENTION_MAX_MINUTES
+  ) {
+    throw new DomainError(ErrorCode.VALIDATION_FAILED, 'Choose between 5 minutes and 30 days', { field: 'retentionMinutes' });
+  }
+  return { retention, minutes };
+}
+
+/**
+ * A reply must point to a message of the same chat that still has its content (not deleted for
+ * everyone, expired or erased) and isn't a system notice.
+ */
+export function assertCanReplyTo(
+  original: Pick<Message, 'conversationId' | 'type' | 'deletedForEveryoneAt' | 'expiredAt' | 'contentPurgedAt'> | null,
+  conversationId: string,
+): void {
+  if (!original || original.conversationId !== conversationId || original.type !== 'text' || !hasContent(original)) {
+    throw new DomainError(ErrorCode.REPLY_NOT_AVAILABLE, 'You can’t reply to this message');
+  }
+}
+
+/** The quote shown on a reply, as seen by `viewerPersonaId`. */
+export function toReplyPreview(ref: ReplyRef, viewerPersonaId: string): ReplyPreviewDto {
+  const mine = ref.senderPersonaId === viewerPersonaId;
+  const kind: ReplyPreviewDto['kind'] = ref.attachment ? ref.attachment.kind : ref.hasGif ? 'gif' : 'text';
+  // A suppressed message (sender was blocked) never reached the other side: don't leak it via a quote.
+  const available = hasContent(ref) && (!ref.suppressed || mine);
+  if (!available) return { id: ref.id, mine, kind, text: null, available: false };
+  const caption = ref.body?.trim() ? ref.body : null;
+  const raw = caption ?? (ref.attachment?.kind === 'file' ? ref.attachment.fileName : null);
+  const text = raw === null ? null : raw.length > LIMITS.REPLY_PREVIEW_MAX ? `${raw.slice(0, LIMITS.REPLY_PREVIEW_MAX - 1)}…` : raw;
+  return { id: ref.id, mine, kind, text, available: true };
+}
 
 /** Photos and files are allowed in a chat only when both numbers allow them. */
 export const mediaAllowed = (view: Pick<ConversationView, 'myPersona' | 'otherPersona'>) =>

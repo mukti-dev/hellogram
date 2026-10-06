@@ -1,17 +1,20 @@
-import type { ConversationDto, MessageDto } from '@hellogram/shared';
+import type { ConversationDto, MessageDto, ReplyPreviewDto } from '@hellogram/shared';
 import { Clock } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSocket } from '../../../core/realtime/socket.js';
 import { t } from '../../../i18n/t.js';
 import { dayLabel } from '../../../shared/format.js';
+import { useNow } from '../../../shared/use-now.js';
 import { chatApi } from '../api/chat.api.js';
 import { useOutbox } from '../model/outbox.js';
 import { useMessages } from '../model/queries.js';
+import { quoteOf } from '../model/reply.js';
+import { retentionMs, retentionPeriod } from '../model/retention.js';
 import { useRetryMessage } from '../model/send.js';
 import { Composer } from './Composer.js';
 import { MessageBubble } from './MessageBubble.js';
 
-const PERIOD: Record<string, string> = { d90: '90 days', d30: '30 days', d7: '7 days', h24: '24 hours' };
+const HIGHLIGHT_MS = 1600;
 
 export function ChatPane({ conversation }: { conversation: ConversationDto }) {
   const messages = useMessages(conversation.id);
@@ -19,8 +22,39 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
   const retry = useRetryMessage();
   const olderRef = useRef<HTMLDivElement>(null);
   const otherName = conversation.nickname ?? conversation.counterpart.displayName;
+  const [replyTo, setReplyTo] = useState<{ conversationId: string; quote: ReplyPreviewDto } | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  // Only for this chat (switching chats drops a half-written reply).
+  const replying = replyTo?.conversationId === conversation.id ? replyTo.quote : null;
 
-  const server = useMemo(() => messages.data?.pages.flatMap((p) => p.items) ?? [], [messages.data]);
+  // Disappearing messages leave the screen on time; the server stops listing them within a minute.
+  const keepMs = retentionMs(conversation);
+  const now = useNow(keepMs !== null && keepMs < 24 * 60 * 60_000 ? 15_000 : 60_000);
+  const cutoff = keepMs === null ? null : now - keepMs;
+  const server = useMemo(
+    () =>
+      (messages.data?.pages.flatMap((p) => p.items) ?? []).filter(
+        (m) => cutoff === null || m.type !== 'text' || new Date(m.createdAt).getTime() >= cutoff,
+      ),
+    [messages.data, cutoff],
+  );
+
+  const jumpTo = useCallback((messageId: string) => {
+    const el = logRef.current?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (!el) return; // not loaded (older than what's on screen)
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightId(messageId);
+  }, []);
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
+  const onReply = useCallback(
+    (m: MessageDto) => setReplyTo({ conversationId: m.conversationId, quote: quoteOf(m) }),
+    [],
+  );
   const pending = outbox
     .filter((o) => o.conversationId === conversation.id)
     .filter((o) => !server.some((m) => m.clientMessageId === o.clientMessageId))
@@ -66,6 +100,7 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
         attachment: null,
         gif: null,
         system: null,
+        replyTo: o.replyTo ?? null,
         createdAt: o.createdAt,
         deleted: false,
         status: null,
@@ -76,23 +111,33 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
     ...server.map((m) => ({ m })),
   ];
 
+  const period = retentionPeriod(conversation.retention, conversation.retentionMinutes);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {conversation.retention !== 'forever' && (
+      {period && (
         <div className="flex justify-center px-4 pt-3">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-surface-2 px-3 py-1.5 text-xs text-muted">
             <Clock className="size-3.5" aria-hidden />
-            {t('chat.disappears', { period: PERIOD[conversation.retention] ?? '' })}
+            {t('chat.disappears', { period })}
           </span>
         </div>
       )}
-      <div className="flex flex-1 flex-col-reverse gap-1.5 overflow-y-auto px-3 py-3 lg:px-6" role="log" aria-label="Messages">
+      <div ref={logRef} className="flex flex-1 flex-col-reverse gap-1.5 overflow-y-auto px-3 py-3 lg:px-6" role="log" aria-label="Messages">
         {rows.map(({ m, tick, retry: onRetry }, i) => {
           const older = rows[i + 1]?.m;
           const newDay = !older || dayLabel(older.createdAt) !== dayLabel(m.createdAt);
           return (
             <Fragment key={m.id}>
-              <MessageBubble message={m} otherName={otherName} tick={tick} onRetry={onRetry} />
+              <MessageBubble
+                message={m}
+                otherName={otherName}
+                tick={tick}
+                onRetry={onRetry}
+                onReply={conversation.unavailable ? undefined : onReply}
+                onJump={jumpTo}
+                highlighted={highlightId === m.id}
+              />
               {newDay && (
                 <div className="my-2 flex justify-center">
                   <span className="text-[11px] font-medium text-muted">{dayLabel(m.createdAt)}</span>
@@ -108,7 +153,13 @@ export function ChatPane({ conversation }: { conversation: ConversationDto }) {
       {conversation.unavailable ? (
         <p className="border-t border-border bg-surface-1 p-4 text-center text-sm text-muted">{t('chat.unavailable')}</p>
       ) : (
-        <Composer conversationId={conversation.id} mediaAllowed={conversation.mediaAllowed} />
+        <Composer
+          conversationId={conversation.id}
+          mediaAllowed={conversation.mediaAllowed}
+          replyTo={replying}
+          otherName={otherName}
+          onCancelReply={() => setReplyTo(null)}
+        />
       )}
     </div>
   );

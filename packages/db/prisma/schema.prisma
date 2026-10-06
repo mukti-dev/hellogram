@@ -64,6 +64,8 @@ enum Retention {
   d30
   d7
   h24
+  /// A chat's own time: Conversation.retentionMinutes (a number's default can't be custom).
+  custom
 }
 
 enum RequestStatus {
@@ -394,6 +396,8 @@ model Conversation {
   personaAId           String     @db.Uuid
   personaBId           String     @db.Uuid
   retention            Retention
+  /// Only for retention "custom": minutes messages are kept (5 … 43200).
+  retentionMinutes     Int?
   retentionChangedById String?    @db.Uuid
   retentionChangedAt   DateTime?  @db.Timestamptz
   lastMessageAt        DateTime?  @db.Timestamptz
@@ -454,14 +458,21 @@ model Message {
   expiredAt            DateTime?     @db.Timestamptz
   /// Text set to NULL and the file destroyed for good.
   contentPurgedAt      DateTime?     @db.Timestamptz
+  /// The message this one replies to (same conversation).
+  replyToId            String?       @db.Uuid
   conversation         Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender               Persona       @relation(fields: [senderPersonaId], references: [id])
+  replyTo              Message?      @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies              Message[]     @relation("MessageReplies")
   hiddenFor            MessageHide[]
   attachment           Attachment?
 
   @@unique([senderPersonaId, clientMessageId])
   @@index([conversationId, createdAt])
   @@index([createdAt])
+  /// retention.expireContent (every minute): unexpired messages of a chat, by age.
+  @@index([conversationId, expiredAt, createdAt])
+  @@index([replyToId])
   @@map("messages")
 }
 

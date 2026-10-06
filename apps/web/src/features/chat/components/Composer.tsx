@@ -1,14 +1,30 @@
-import { LIMITS } from '@hellogram/shared';
+import { LIMITS, type ReplyPreviewDto } from '@hellogram/shared';
 import { cn } from '@hellogram/ui';
-import { FileText, LoaderCircle, Paperclip, SendHorizontal, Smile, X } from 'lucide-react';
+import { FileText, LoaderCircle, Paperclip, Reply, SendHorizontal, Smile, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { getSocket } from '../../../core/realtime/socket.js';
 import { t } from '../../../i18n/t.js';
 import { ATTACHMENT_ACCEPT, fileSize, tooLarge } from '../model/attachments.js';
+import { quoteAuthor, quoteText } from '../model/reply.js';
 import { useSendAttachment, useSendMessage } from '../model/send.js';
 
-/** `mediaAllowed`: photos and files only when both numbers in the chat allow them. */
-export function Composer({ conversationId, mediaAllowed = true }: { conversationId: string; mediaAllowed?: boolean }) {
+/**
+ * `mediaAllowed`: photos and files only when both numbers in the chat allow them.
+ * `replyTo`: the message being replied to (shown above the input until sent or cancelled).
+ */
+export function Composer({
+  conversationId,
+  mediaAllowed = true,
+  replyTo = null,
+  otherName = '',
+  onCancelReply,
+}: {
+  conversationId: string;
+  mediaAllowed?: boolean;
+  replyTo?: ReplyPreviewDto | null;
+  otherName?: string;
+  onCancelReply?: () => void;
+}) {
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -17,6 +33,11 @@ export function Composer({ conversationId, mediaAllowed = true }: { conversation
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const lastTyping = useRef(0);
+
+  // Choosing "Reply" puts the cursor in the input.
+  useEffect(() => {
+    if (replyTo) ref.current?.focus();
+  }, [replyTo]);
 
   const preview = useMemo(() => (file?.type.startsWith('image/') ? URL.createObjectURL(file) : null), [file]);
   useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
@@ -45,10 +66,11 @@ export function Composer({ conversationId, mediaAllowed = true }: { conversation
     if (sendFile.isPending) return;
     if (file) {
       sendFile.mutate(
-        { file, caption: text },
+        { file, caption: text, replyTo: replyTo ?? undefined },
         {
           onSuccess: () => {
             setFile(null);
+            onCancelReply?.();
             resetInput();
           },
         },
@@ -57,11 +79,17 @@ export function Composer({ conversationId, mediaAllowed = true }: { conversation
     }
     const body = text.trim();
     if (!body) return;
-    send.mutate(body);
+    send.mutate({ body, replyTo: replyTo ?? undefined });
+    onCancelReply?.();
     resetInput();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape' && replyTo) {
+      e.preventDefault();
+      onCancelReply?.();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
@@ -105,6 +133,25 @@ export function Composer({ conversationId, mediaAllowed = true }: { conversation
         <p role="alert" className="mb-2 px-1 text-sm text-danger">
           {error}
         </p>
+      )}
+      {replyTo && (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-surface-2 py-1.5 pr-1.5 pl-3">
+          <Reply className="size-4 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0 flex-1 border-l-4 border-primary pl-2.5">
+            <p className="truncate text-xs font-semibold text-primary">
+              {t('chat.replyingTo', { name: quoteAuthor(replyTo, otherName) })}
+            </p>
+            <p className="truncate text-sm text-muted">{quoteText(replyTo)}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancelReply}
+            aria-label={t('chat.cancelReply')}
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-3"
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </div>
       )}
       {file && (
         <div className="mb-2 flex items-center gap-3 rounded-xl border border-border bg-surface-2 p-2">

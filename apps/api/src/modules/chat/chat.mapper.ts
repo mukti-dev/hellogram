@@ -3,6 +3,7 @@ import {
   isClosed,
   mediaAllowed,
   messageStatus,
+  toReplyPreview,
   type ConversationView,
   type InboxRow,
   type Message,
@@ -32,7 +33,12 @@ export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
   const deleted = Boolean(m.deletedForEveryoneAt);
   let system: MessageDto['system'] = null;
   if (m.systemPayload?.kind === 'retention_changed') {
-    system = { kind: 'retention_changed', byMe: m.systemPayload.byPersonaId === viewerPersonaId, value: m.systemPayload.value };
+    system = {
+      kind: 'retention_changed',
+      byMe: m.systemPayload.byPersonaId === viewerPersonaId,
+      value: m.systemPayload.value,
+      minutes: m.systemPayload.minutes ?? null,
+    };
   } else if (m.systemPayload?.kind === 'number_unavailable') {
     system = { kind: 'number_unavailable' };
   }
@@ -46,6 +52,7 @@ export function toMessageDto(m: Message, viewerPersonaId: string): MessageDto {
     attachment: m.attachment && hasContent(m) ? toAttachmentDto(m.attachment) : null,
     gif: m.gif && hasContent(m) ? m.gif : null,
     system,
+    replyTo: m.replyTo && hasContent(m) ? toReplyPreview(m.replyTo, viewerPersonaId) : null,
     createdAt: m.createdAt.toISOString(),
     deleted,
     status: mine && m.type === 'text' ? messageStatus(m) : null,
@@ -81,6 +88,7 @@ export function toConversationDto(
     nickname: view.me.nickname,
     unavailable: isClosed(view),
     retention: view.conversation.retention,
+    retentionMinutes: view.conversation.retention === 'custom' ? view.conversation.retentionMinutes : null,
     mutedUntil: view.me.mutedUntil?.toISOString() ?? null,
     mediaAllowed: mediaAllowed(view),
     unread: view.unread ?? 0,
