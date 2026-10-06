@@ -126,7 +126,7 @@ export function MessageBubble({
               }
               items={[
                 ...(onReply && canReplyTo(message)
-                  ? [{ label: t('chat.reply'), icon: <Reply className="size-4" />, onSelect: () => onReply(message) }]
+                  ? [{ label: t('chat.reply'), icon: <Reply className="size-4" />, onSelect: () => onReply(message), movesFocus: true }]
                   : []),
                 ...(message.body
                   ? [{ label: t('chat.copy'), icon: <Copy className="size-4" />, onSelect: () => void navigator.clipboard?.writeText(message.body ?? '') }]

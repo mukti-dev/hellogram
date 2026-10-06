@@ -34,9 +34,12 @@ export function Composer({
   const picker = useRef<HTMLInputElement>(null);
   const lastTyping = useRef(0);
 
-  // Choosing "Reply" puts the cursor in the input.
+  // Choosing "Reply" puts the cursor in the input — on the next tick, after the message menu has
+  // closed and handed focus back to its own button.
   useEffect(() => {
-    if (replyTo) ref.current?.focus();
+    if (!replyTo) return;
+    const id = setTimeout(() => ref.current?.focus(), 0);
+    return () => clearTimeout(id);
   }, [replyTo]);
 
   const preview = useMemo(() => (file?.type.startsWith('image/') ? URL.createObjectURL(file) : null), [file]);
