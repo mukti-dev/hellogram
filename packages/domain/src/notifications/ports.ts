@@ -38,9 +38,14 @@ export interface PushSender {
   send(subscription: PushSubscriptionRecord, payload: PushPayload): Promise<'ok' | 'gone'>;
 }
 
-/** A phone's push token (mobile app). iOS: "voip" rings CallKit, "alert" is everything else. */
+/**
+ * A phone's push token (mobile app). "alert" is the app's Firebase (FCM) token on Android and
+ * iPhone; an iPhone may also register a "voip" token (PushKit) to ring CallKit.
+ */
 export interface NativePushTokenRecord {
   id: string;
+  /** The device (login session) it belongs to. */
+  sessionId: string;
   platform: 'ios' | 'android';
   kind: 'voip' | 'alert';
   token: string;

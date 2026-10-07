@@ -19,7 +19,7 @@ export class PrismaNativePushTokenRepository implements NativePushTokenRepositor
   listForAccount(accountId: string, now: Date): Promise<NativePushTokenRecord[]> {
     return this.db.nativePushToken.findMany({
       where: { accountId, session: { revokedAt: null, expiresAt: { gt: now } } },
-      select: { id: true, platform: true, kind: true, token: true },
+      select: { id: true, sessionId: true, platform: true, kind: true, token: true },
     });
   }
 
