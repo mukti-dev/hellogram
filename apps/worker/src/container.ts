@@ -33,6 +33,8 @@ import {
   PrismaMaintenanceRepository,
   PrismaPersonaRepository,
   PrismaNativePushTokenRepository,
+  FcmSender,
+  parseServiceAccount,
   PrismaPushSubscriptionRepository,
   PrismaReachRepository,
   QrCodeSvgRenderer,
@@ -105,8 +107,8 @@ export function createWorkerContainer(env: WorkerEnv, redis: Redis) {
       env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY
         ? new WebPushSender({ subject: env.VAPID_SUBJECT, publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY })
         : null,
-    // APNs / FCM senders plug in here once the credentials exist; until then phone tokens are only stored.
-    nativeSender: null,
+    // Firebase (FCM) for the mobile app; until the key is set, phone tokens are only stored.
+    nativeSender: env.FCM_SERVICE_ACCOUNT ? new FcmSender(parseServiceAccount(env.FCM_SERVICE_ACCOUNT)) : null,
   });
   const triggers = new PushTriggers({ personas, conversations, clock });
   const maintenance = new MaintenanceService({

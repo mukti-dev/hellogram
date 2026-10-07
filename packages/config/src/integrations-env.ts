@@ -11,6 +11,11 @@ export const integrationsEnvSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:support@hellogram.app'),
+  /**
+   * Mobile app push (Firebase Cloud Messaging, Android and iPhone): the Firebase service-account
+   * key file's JSON, raw or base64. Unset: phone tokens are stored but nothing is sent.
+   */
+  FCM_SERVICE_ACCOUNT: z.string().optional(),
 });
 
 export type IntegrationsEnv = z.infer<typeof integrationsEnvSchema>;

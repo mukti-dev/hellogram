@@ -62,3 +62,4 @@ export * from './persistence/prisma-trusted-device.repository.js';
 export * from './redis/redis-ephemeral.store.js';
 export * from './redis/redis-vault-token.store.js';
 export * from './persistence/prisma-vault.repository.js';
+export * from './push/fcm.sender.js';

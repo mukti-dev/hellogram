@@ -9,16 +9,23 @@ import type {
 } from '@hellogram/domain';
 
 /**
- * Which phone tokens a payload goes to. On iOS, calls ring CallKit through PushKit ("voip");
- * everything else (messages, requests, the end of a call) is a normal "alert". Android has one token.
+ * Which phone tokens a payload goes to. Everything goes to the app's "alert" token (Firebase).
+ * A ringing call goes to an iPhone's "voip" token instead when that device has one (CallKit);
+ * VoIP tokens never get anything else (iOS stops waking apps that get VoIP pushes without a call).
  */
 const isCallRing = (payload: PushPayload) => payload.kind === 'call';
-export const wantsToken = (token: Pick<NativePushTokenRecord, 'platform' | 'kind'>, payload: PushPayload) =>
-  token.platform === 'android' || token.kind === (isCallRing(payload) ? 'voip' : 'alert');
+export function wantsToken(
+  token: Pick<NativePushTokenRecord, 'platform' | 'kind' | 'sessionId'>,
+  payload: PushPayload,
+  voipSessions: ReadonlySet<string> = new Set(),
+): boolean {
+  if (token.kind === 'voip') return isCallRing(payload);
+  return !(isCallRing(payload) && voipSessions.has(token.sessionId));
+}
 
 /**
- * Push delivery (runs in the worker): Web Push to browsers, and APNs / FCM to the mobile app
- * once those senders are configured. Locked-number redaction happens before this.
+ * Push delivery (runs in the worker): Web Push to browsers, and Firebase (FCM) to the mobile app
+ * once FCM_SERVICE_ACCOUNT is set. Locked-number redaction happens before this.
  */
 export class NotificationService {
   constructor(
@@ -26,7 +33,7 @@ export class NotificationService {
       subscriptions: PushSubscriptionRepository;
       sender: PushSender | null;
       nativeTokens?: NativePushTokenRepository;
-      /** null until APNs / FCM credentials are set: phone tokens are kept, nothing is sent. */
+      /** null until FCM_SERVICE_ACCOUNT is set: phone tokens are kept, nothing is sent. */
       nativeSender?: NativePushSender | null;
       clock?: Clock;
     },
@@ -69,8 +76,10 @@ export class NotificationService {
     if (!nativeTokens || !nativeSender) return 0;
     let sent = 0;
     const now = this.deps.clock?.now() ?? new Date();
-    for (const token of await nativeTokens.listForAccount(accountId, now)) {
-      if (!wantsToken(token, payload)) continue;
+    const tokens = await nativeTokens.listForAccount(accountId, now);
+    const voipSessions = new Set(tokens.filter((t) => t.kind === 'voip').map((t) => t.sessionId));
+    for (const token of tokens) {
+      if (!wantsToken(token, payload, voipSessions)) continue;
       const result = await nativeSender.send(token, payload).catch(() => 'ok' as const);
       if (result === 'gone') await nativeTokens.deleteById(token.id);
       else sent++;
