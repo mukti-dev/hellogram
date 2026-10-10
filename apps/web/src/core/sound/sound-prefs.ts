@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { safeStorage } from '../../shared/safe-storage.js';
 
-export const RINGTONES = ['classic', 'chime', 'marimba', 'pulse', 'silent'] as const;
-export type Ringtone = (typeof RINGTONES)[number];
+import type { Ringtone } from '@hellogram/shared';
+
+export { RINGTONES, type Ringtone } from '@hellogram/shared';
 
 export const MESSAGE_TONES = ['pop', 'ding', 'none'] as const;
 export type MessageTone = (typeof MESSAGE_TONES)[number];

@@ -28,7 +28,7 @@ export const callRoutes =
 
     // A device opened from the incoming-call notification asks what's ringing.
     app.get('/calls/:id', { schema: { params, response: { 200: incomingCallSchema } } }, async (request) => {
-      const { call, calleeLocked } = await calls.ringing(actorOf(request), request.params.id);
+      const { call, calleeLocked, ringtone } = await calls.ringing(actorOf(request), request.params.id);
       return {
         callId: call.id,
         conversationId: call.conversationId,
@@ -36,6 +36,7 @@ export const callRoutes =
           ? null
           : { id: call.caller.id, code: call.caller.code, displayName: call.caller.displayName, avatarUrl: avatarUrl(call.caller.avatarKey) },
         to: { personaId: call.callee.id, code: call.callee.code, labelIcon: call.callee.labelIcon, labelName: call.callee.labelName },
+        ringtone,
       };
     });
 

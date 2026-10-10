@@ -28,6 +28,7 @@ const memberSelect = {
   counterpartMasked: true,
   vault: true,
   vaultSpaceId: true,
+  ringtone: true,
   persona: { select: personaSelect },
 } as const;
 
@@ -356,7 +357,7 @@ export class PrismaConversationRepository implements ConversationRepository {
   async updateMember(
     conversationId: string,
     personaId: string,
-    patch: { nickname?: string | null; mutedUntil?: Date | null; clearedBefore?: Date },
+    patch: { nickname?: string | null; mutedUntil?: Date | null; clearedBefore?: Date; ringtone?: string | null },
   ): Promise<void> {
     await this.db.conversationMember.update({
       where: { conversationId_personaId: { conversationId, personaId } },

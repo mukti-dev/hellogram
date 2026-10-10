@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CALLER_TUNES, RINGTONES } from '../tones.js';
 import { counterpartSchema, ownPersonaBriefSchema } from './requests.js';
 
 export const iceServerSchema = z.object({
@@ -13,6 +14,8 @@ export const callStartSchema = z.object({
   /** Always "relay": peers never learn each other's IP address. */
   iceTransportPolicy: z.literal('relay'),
   ringSeconds: z.number().int(),
+  /** What to play while it rings: the callee number's caller tune (null = the standard ringback). */
+  callerTune: z.enum(CALLER_TUNES).nullable(),
 });
 export type CallStartDto = z.infer<typeof callStartSchema>;
 
@@ -40,6 +43,8 @@ export const incomingCallSchema = z.object({
   conversationId: z.uuid(),
   caller: z.object({ id: z.uuid(), code: z.string(), displayName: z.string(), avatarUrl: z.string().nullable() }).nullable(),
   to: z.object({ personaId: z.uuid(), code: z.string(), labelIcon: z.string(), labelName: z.string() }),
+  /** The callee's choice for this chat, else for this number; null = the device's own ringtone. */
+  ringtone: z.enum(RINGTONES).nullable(),
 });
 export type IncomingCallEvent = z.infer<typeof incomingCallSchema>;
 

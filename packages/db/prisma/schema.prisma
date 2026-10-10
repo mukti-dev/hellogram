@@ -317,6 +317,9 @@ model Persona {
   readReceipts     Boolean       @default(true)
   dndUntil         DateTime?     @db.Timestamptz
   defaultRetention Retention     @default(d30)
+  /// Built-in tone names (@hellogram/shared tones): what rings for calls to this number, and what callers hear.
+  ringtone         String?        @db.VarChar(20)
+  callerTune       String?        @db.VarChar(20)
   pinHash          String?
   pinFailedCount   Int           @default(0)
   pinLockLevel     Int           @default(0)
@@ -424,6 +427,8 @@ model ConversationMember {
   vault                  VaultState?
   /// The hide PIN's space when `vault` is hidden.
   vaultSpaceId           String?      @db.Uuid
+  /// This chat's own ringtone (overrides the number's).
+  ringtone               String?      @db.VarChar(20)
   conversation           Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   persona                Persona      @relation(fields: [personaId], references: [id])
   vaultSpace             VaultSpace?  @relation(fields: [vaultSpaceId], references: [id], onDelete: SetNull)

@@ -122,6 +122,7 @@ export function registerRealtimeEvents(
       calleeLocked: boolean;
       caller: Persona;
       callee: Persona;
+      ringtone: string | null;
     };
     rt.to(personaRoom(p.calleePersonaId)).emit('call:incoming', {
       callId: p.callId,
@@ -131,6 +132,7 @@ export function registerRealtimeEvents(
         ? null
         : { id: p.caller.id, code: p.caller.code, displayName: p.caller.displayName, avatarUrl: avatarUrl(p.caller.avatarKey) },
       to: { personaId: p.callee.id, code: p.callee.code, labelIcon: p.callee.labelIcon, labelName: p.callee.labelName },
+      ringtone: p.ringtone,
     });
   });
 

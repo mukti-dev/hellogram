@@ -9,7 +9,7 @@ import {
   type MessageAttachment,
   type Persona,
 } from '@hellogram/domain';
-import type { AttachmentDto, ChatCounterpartDto, ConversationDto, LockedNumberRowDto, MessageDto } from '@hellogram/shared';
+import { ringtoneOrNull, type AttachmentDto, type ChatCounterpartDto, type ConversationDto, type LockedNumberRowDto, type MessageDto } from '@hellogram/shared';
 import { toOwnBrief, type AvatarUrl } from '../shared-mappers.js';
 
 /** File details for clients. Where and how it is stored never leaves the server. */
@@ -87,6 +87,7 @@ export function toConversationDto(
     lastMessage: last ? toMessageDto(last, view.myPersona.id) : null,
     lastActivityAt: (last?.createdAt ?? view.conversation.createdAt).toISOString(),
     vault: view.me.vault,
+    ringtone: ringtoneOrNull(view.me.ringtone),
   };
 }
 

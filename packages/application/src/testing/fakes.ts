@@ -258,6 +258,8 @@ export class FakePersonas implements PersonaRepository {
       readReceipts: true,
       dndUntil: null,
       defaultRetention: 'd30',
+      ringtone: null,
+      callerTune: null,
       hasPin: false,
       createdAt: new Date(),
       retiredAt: null,

@@ -19,6 +19,8 @@ export const personaSelect = {
   readReceipts: true,
   dndUntil: true,
   defaultRetention: true,
+  ringtone: true,
+  callerTune: true,
   pinHash: true,
   createdAt: true,
   retiredAt: true,
