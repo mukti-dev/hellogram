@@ -45,8 +45,20 @@ type RichOptions = NotificationOptions & {
 
 const windows = () => self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
-/** Hellogram is on screen and in front: its own call screen shows, no notification needed. */
-const inFront = async () => (await windows()).some((w) => w.focused && w.visibilityState === 'visible');
+/**
+ * Notifications only while a Hellogram tab is open (signed in) but not the one being looked at:
+ * nothing once every tab is closed, nothing while Hellogram is in front.
+ */
+const shouldNotify = async () => {
+  const open = (await windows()).filter((w) => new URL(w.url).origin === self.location.origin);
+  return open.length > 0 && !open.some((w) => w.focused && w.visibilityState === 'visible');
+};
+
+/** Every push must show something: when nothing should show, flash a silent one and close it at once. */
+async function showNothing(tag = 'hg-quiet') {
+  await self.registration.showNotification('Hellogram', { tag, silent: true });
+  for (const n of await self.registration.getNotifications({ tag })) n.close();
+}
 
 /**
  * Ringing call: stays up (over other apps) until Accept/Decline, vibrates, and is replaced by
@@ -77,7 +89,7 @@ async function showCall(data: PushPayload) {
 async function endCall(data: PushPayload) {
   const tag = data.tag ?? `call-${data.callId}`;
   for (const n of await self.registration.getNotifications({ tag })) n.close();
-  if (await inFront()) return;
+  if (!(await shouldNotify())) return showNothing(tag);
   if (data.missed) {
     await self.registration.showNotification(data.title, { body: data.body, tag, icon: '/icon.svg', badge: '/icon.svg', data: { url: data.url } });
     return;
@@ -92,11 +104,9 @@ self.addEventListener('push', (event) => {
   const data = (event.data?.json() ?? { title: 'Hellogram', body: '', url: '/' }) as PushPayload;
   event.waitUntil(
     (async () => {
-      if (data.kind === 'call') {
-        if (!(await inFront())) await showCall(data);
-        return;
-      }
       if (data.kind === 'call_ended' || data.kind === 'call_answered') return endCall(data);
+      if (!(await shouldNotify())) return showNothing();
+      if (data.kind === 'call') return showCall(data);
       await self.registration.showNotification(data.title, {
         body: data.body,
         tag: data.tag,
