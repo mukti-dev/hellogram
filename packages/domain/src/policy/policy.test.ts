@@ -21,6 +21,8 @@ const persona = (over: Partial<Persona> = {}): Persona => ({
   readReceipts: true,
   dndUntil: null,
   defaultRetention: 'd30',
+  ringtone: null,
+  callerTune: null,
   hasPin: false,
   createdAt: NOW,
   retiredAt: null,

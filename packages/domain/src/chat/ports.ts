@@ -71,7 +71,7 @@ export interface ConversationRepository {
   markRead(conversationId: string, readerPersonaId: string, upToMessageId: string, stampReadAt: boolean, at: Date): Promise<{ changed: boolean }>;
   hideMessage(messageId: string, personaId: string): Promise<void>;
   deleteForEveryone(messageId: string, at: Date): Promise<void>;
-  updateMember(conversationId: string, personaId: string, patch: { nickname?: string | null; mutedUntil?: Date | null; clearedBefore?: Date }): Promise<void>;
+  updateMember(conversationId: string, personaId: string, patch: { nickname?: string | null; mutedUntil?: Date | null; clearedBefore?: Date; ringtone?: string | null }): Promise<void>;
   setRetention(conversationId: string, retention: Retention, byPersonaId: string, at: Date): Promise<void>;
   /** Block effects (§6.3): hide for the blocker, mask the blocker for the blocked side. */
   applyBlock(conversationId: string, blockerPersonaId: string, blockedPersonaId: string, at: Date): Promise<void>;

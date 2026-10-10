@@ -166,6 +166,8 @@ export class PersonaService {
       readReceipts?: boolean | undefined;
       dndUntil?: Date | null | undefined;
       defaultRetention?: Retention | undefined;
+      ringtone?: string | null | undefined;
+      callerTune?: string | null | undefined;
     },
   ): Promise<Persona> {
     const current = await this.unlocked(actor, id);
@@ -178,6 +180,8 @@ export class PersonaService {
       if (input[key] !== undefined) Object.assign(patch, { [key]: input[key] });
     }
     if (input.dndUntil !== undefined) patch.dndUntil = input.dndUntil;
+    if (input.ringtone !== undefined) patch.ringtone = input.ringtone;
+    if (input.callerTune !== undefined) patch.callerTune = input.callerTune;
     const updated = await this.deps.personas.update(current.id, patch);
     await this.publishUpdated(updated);
     return updated;

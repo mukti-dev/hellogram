@@ -7,18 +7,20 @@ import { useCallStore } from './call-store.js';
  * Numbers on Do-not-disturb never ring here — the server drops those calls before they reach us.
  */
 let stop: (() => void) | null = null;
-let current: 'ring' | 'ringback' | null = null;
+let current: string | null = null;
 
 useCallStore.subscribe((state) => {
-  const want = state.phase === 'incoming' ? 'ring' : state.phase === 'outgoing' ? 'ringback' : null;
+  // The ringback waits for the server's answer: it says which caller tune the other number has.
+  const ringback = state.phase === 'outgoing' && state.callerTune !== undefined;
+  const want = state.phase === 'incoming' ? 'ring' : ringback ? `ringback:${state.callerTune ?? ''}` : null;
   if (want === current) return;
   stop?.();
   stop = null;
   current = want;
   if (want === 'ring') {
     const { ringtone, vibrate } = useSoundPrefs.getState();
-    stop = startRingtone(ringtone, vibrate);
-  } else if (want === 'ringback') {
-    stop = startRingback();
+    stop = startRingtone(state.ringtone ?? ringtone, vibrate);
+  } else if (ringback) {
+    stop = startRingback(state.callerTune ?? null);
   }
 });

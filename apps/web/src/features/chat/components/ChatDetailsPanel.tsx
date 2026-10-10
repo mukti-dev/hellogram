@@ -1,6 +1,6 @@
 import { RETENTION_OPTIONS, type ConversationDto, type Retention } from '@hellogram/shared';
 import { Avatar, Button, Dialog, Switch, TextField, cn } from '@hellogram/ui';
-import { Bell, Pencil, Phone, Trash2, X } from 'lucide-react';
+import { Bell, BellRing, Pencil, Phone, Trash2, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { t } from '../../../i18n/t.js';
 
@@ -8,6 +8,7 @@ import { SafetyRows } from '../../safety/components/SafetyRows.js';
 import { useClearChat, useUpdateConversation } from '../model/queries.js';
 import { chatTitle } from './ConversationRow.js';
 import { NumberLabel } from '../../numbers/components/NumberLabel.js';
+import { TonePickerRow } from '../../sounds/TonePicker.js';
 
 const MUTE_FOREVER = '2099-12-31T00:00:00.000Z';
 
@@ -125,6 +126,17 @@ export function ChatDetailsPanel({
             <Switch checked={muted} onCheckedChange={(v) => update.mutate({ mutedUntil: v ? MUTE_FOREVER : null })} label={t('chat.mute')} />
           }
         />
+        <div className="px-1">
+          <TonePickerRow
+            kind="ringtone"
+            icon={<BellRing className="size-5" aria-hidden />}
+            title={t('tones.ringtone')}
+            hint={t('tones.chatRingtoneHint')}
+            defaultLabel={t('tones.chatRingtoneDefault')}
+            value={c.ringtone}
+            onPick={(ringtone) => update.mutate({ ringtone })}
+          />
+        </div>
         <Row icon={<Trash2 className="size-5" aria-hidden />} title={t('chat.clear')} hint={t('chat.clearHint')} danger onClick={() => setConfirmClear(true)} />
         <SafetyRows conversation={c} onDone={onClose} />
       </div>

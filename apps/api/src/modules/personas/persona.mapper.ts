@@ -1,5 +1,5 @@
 import type { Persona } from '@hellogram/domain';
-import type { OwnPersonaDto } from '@hellogram/shared';
+import { callerTuneOrNull, ringtoneOrNull, type OwnPersonaDto } from '@hellogram/shared';
 
 /**
  * Own-persona serializer. Never includes accountId; retired personas never reach here.
@@ -26,6 +26,8 @@ export function toOwnPersonaDto(
     readReceipts: persona.readReceipts,
     dndUntil: persona.dndUntil?.toISOString() ?? null,
     defaultRetention: persona.defaultRetention,
+    ringtone: ringtoneOrNull(persona.ringtone),
+    callerTune: callerTuneOrNull(persona.callerTune),
     hasPin: persona.hasPin,
     locked: persona.hasPin && !unlocked.has(persona.id),
   };

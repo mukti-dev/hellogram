@@ -45,6 +45,8 @@ export interface ConversationMember {
   /** Vault, this side only (null = inbox). */
   vault: VaultState | null;
   vaultSpaceId: string | null;
+  /** This side's ringtone for calls in this chat (null = the number's). */
+  ringtone: string | null;
 }
 
 export interface Conversation {

@@ -1,3 +1,4 @@
+import { CALLER_TUNE_PATTERNS, RINGTONE_PATTERNS, type CallerTune, type TonePattern } from '@hellogram/shared';
 import type { MessageTone, Ringtone } from './sound-prefs.js';
 
 /**
@@ -23,57 +24,7 @@ export function unlockAudioOnFirstGesture(): void {
   window.addEventListener('keydown', unlock);
 }
 
-interface Note {
-  /** Frequencies played together (Hz). */
-  f: number[];
-  /** Start offset within the pattern (s). */
-  at: number;
-  dur: number;
-  type?: OscillatorType;
-  gain?: number;
-}
-
-interface Pattern {
-  notes: Note[];
-  /** Pattern length before it repeats (s). */
-  period: number;
-}
-
-const RINGTONE_PATTERNS: Record<Exclude<Ringtone, 'silent'>, Pattern> = {
-  // Two-burst phone ring.
-  classic: {
-    period: 3,
-    notes: [
-      { f: [440, 480], at: 0, dur: 0.4, gain: 0.12 },
-      { f: [440, 480], at: 0.6, dur: 0.4, gain: 0.12 },
-    ],
-  },
-  chime: {
-    period: 2.4,
-    notes: [
-      { f: [659.25], at: 0, dur: 0.5, type: 'triangle', gain: 0.25 },
-      { f: [783.99], at: 0.25, dur: 0.5, type: 'triangle', gain: 0.25 },
-      { f: [1046.5], at: 0.5, dur: 0.9, type: 'triangle', gain: 0.25 },
-    ],
-  },
-  marimba: {
-    period: 2,
-    notes: [523.25, 659.25, 783.99, 659.25, 880, 783.99].map((f, i) => ({ f: [f], at: i * 0.16, dur: 0.22, gain: 0.3 })),
-  },
-  pulse: {
-    period: 1.6,
-    notes: [0, 0.2, 0.4].map((at) => ({ f: [880], at, dur: 0.1, type: 'square' as const, gain: 0.05 })),
-  },
-};
-
-/** Indian ringback (what the caller hears): 400+450 Hz, 0.4 on / 0.2 off / 0.4 on / 2.0 off. */
-const RINGBACK: Pattern = {
-  period: 3,
-  notes: [
-    { f: [400, 450], at: 0, dur: 0.4, gain: 0.05 },
-    { f: [400, 450], at: 0.6, dur: 0.4, gain: 0.05 },
-  ],
-};
+type Pattern = TonePattern;
 
 const MESSAGE_PATTERNS: Record<Exclude<MessageTone, 'none'>, Pattern> = {
   pop: { period: 0, notes: [{ f: [880], at: 0, dur: 0.08, gain: 0.2 }, { f: [1318.5], at: 0.07, dur: 0.1, gain: 0.2 }] },
@@ -130,8 +81,9 @@ export function startRingtone(ringtone: Ringtone, vibrate: boolean): () => void 
   return loop(RINGTONE_PATTERNS[ringtone], vibrate ? RING_VIBRATION : undefined);
 }
 
-export function startRingback(): () => void {
-  return loop(RINGBACK);
+/** What I hear while my call rings out: the other number's caller tune (null = the standard ringback). */
+export function startRingback(tune: CallerTune | null): () => void {
+  return loop(CALLER_TUNE_PATTERNS[tune ?? 'standard']);
 }
 
 export function playMessageTone(tone: MessageTone, vibrate: boolean): void {
@@ -141,12 +93,14 @@ export function playMessageTone(tone: MessageTone, vibrate: boolean): void {
   if (context) schedule(context, context.destination, MESSAGE_PATTERNS[tone], context.currentTime + 0.02);
 }
 
-/** Settings preview: a few seconds of the ringtone. */
-export function previewRingtone(ringtone: Ringtone): () => void {
-  const stop = startRingtone(ringtone, false);
-  const timer = setTimeout(stop, 3000);
+/** Settings preview: a few seconds of the tone. */
+function preview(stop: () => void): () => void {
+  const timer = setTimeout(stop, 4000);
   return () => {
     clearTimeout(timer);
     stop();
   };
 }
+
+export const previewRingtone = (ringtone: Ringtone) => preview(startRingtone(ringtone, false));
+export const previewCallerTune = (tune: CallerTune) => preview(startRingback(tune));

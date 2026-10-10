@@ -22,6 +22,9 @@ export interface Persona {
   readReceipts: boolean;
   dndUntil: Date | null;
   defaultRetention: Retention;
+  /** Built-in tone names; null = the device's default ringtone / the standard ringback. */
+  ringtone: string | null;
+  callerTune: string | null;
   hasPin: boolean;
   createdAt: Date;
   retiredAt: Date | null;

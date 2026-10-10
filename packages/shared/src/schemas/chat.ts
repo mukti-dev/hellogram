@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LIMITS } from '../constants.js';
+import { RINGTONES } from '../tones.js';
 import { labelIconSchema, retentionSchema } from './personas.js';
 import { ownPersonaBriefSchema } from './requests.js';
 
@@ -91,6 +92,8 @@ export const conversationSchema = z.object({
   lastMessage: messageSchema.nullable(),
   lastActivityAt: z.string(),
   vault: vaultStateSchema.nullable(),
+  /** My ringtone for calls in this chat; null = the number's (then the device's). */
+  ringtone: z.enum(RINGTONES).nullable(),
 });
 export type ConversationDto = z.infer<typeof conversationSchema>;
 
@@ -131,6 +134,7 @@ export const updateConversationBody = z
     nickname: z.string().max(LIMITS.NICKNAME_MAX + 20).nullable(),
     mutedUntil: z.iso.datetime().nullable(),
     retention: retentionSchema,
+    ringtone: z.enum(RINGTONES).nullable(),
   })
   .partial();
 export type UpdateConversationBody = z.infer<typeof updateConversationBody>;

@@ -22,7 +22,7 @@ import {
   type ReachRepository,
   type TurnCredentialIssuer,
 } from '@hellogram/domain';
-import { ErrorCode } from '@hellogram/shared';
+import { callerTuneOrNull, ErrorCode, ringtoneOrNull, type CallerTune, type Ringtone } from '@hellogram/shared';
 import type { ChatService } from '../chat/chat.service.js';
 
 export interface CallDeps {
@@ -46,6 +46,7 @@ export interface CallStart {
   iceServers: IceServer[];
   iceTransportPolicy: 'relay';
   ringSeconds: number;
+  callerTune: CallerTune | null;
 }
 
 export interface CallLogEntry {
@@ -110,11 +111,18 @@ export class CallService {
           caller: view.myPersona,
           callee: view.otherPersona,
           declineToken: this.declineToken(call.id),
+          ringtone: ringtoneOrNull(view.other.ringtone ?? view.otherPersona.ringtone),
         },
         occurredAt: this.deps.clock.now(),
       });
     }
-    return { callId: call.id, iceServers: this.deps.turn.issue(call.id), iceTransportPolicy: 'relay', ringSeconds: RING_SECONDS };
+    return {
+      callId: call.id,
+      iceServers: this.deps.turn.issue(call.id),
+      iceTransportPolicy: 'relay',
+      ringSeconds: RING_SECONDS,
+      callerTune: callerTuneOrNull(view.otherPersona.callerTune),
+    };
   }
 
   async accept(actor: Actor, callId: string): Promise<{ iceServers: IceServer[]; iceTransportPolicy: 'relay' }> {
@@ -159,10 +167,11 @@ export class CallService {
   }
 
   /** A call still ringing for me, for a device opened from the notification. */
-  async ringing(actor: Actor, callId: string): Promise<{ call: CallWithParties; calleeLocked: boolean }> {
+  async ringing(actor: Actor, callId: string): Promise<{ call: CallWithParties; calleeLocked: boolean; ringtone: Ringtone | null }> {
     const call = await this.party(actor, callId, 'callee');
     if (call.status !== 'ringing' || call.suppressed) throw new DomainError(ErrorCode.NOT_FOUND, 'This call has ended');
-    return { call, calleeLocked: call.callee.hasPin };
+    const view = await this.deps.chat.view(actor, call.conversationId).catch(() => null);
+    return { call, calleeLocked: call.callee.hasPin, ringtone: ringtoneOrNull(view?.me.ringtone ?? call.callee.ringtone) };
   }
 
   /** Either side hangs up. Caller hanging up while ringing = cancelled (callee sees missed). */

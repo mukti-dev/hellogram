@@ -3,6 +3,7 @@ import { Avatar, Button, Card, Dialog, DropdownMenu, NumberCode, Switch, TextFie
 import {
   ArrowLeft,
   Bell,
+  BellRing,
   Camera,
   CheckCheck,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   Lock,
   MessageCircleQuestion,
   Moon,
+  Music,
   Pause,
   Pencil,
   Phone,
@@ -28,6 +30,7 @@ import { DeleteNumberDialog } from '../components/DeleteNumberDialog.js';
 import { useAvatar, useNumber, usePauseResume, useShare, useUpdateNumber } from '../model/queries.js';
 import { LabelEditor, type LabelValue } from '../components/LabelPicker.js';
 import { NumberLabel } from '../components/NumberLabel.js';
+import { TonePickerRow } from '../../sounds/TonePicker.js';
 
 /** "Until I turn it off" for DND. */
 const DND_FOREVER = '2099-12-31T00:00:00.000Z';
@@ -317,6 +320,24 @@ function NumberDetail({ number }: { number: OwnPersonaDto }) {
           <span className="text-sm text-muted">{t(`numbers.retention.${number.defaultRetention}`)}</span>
           <ChevronRight className="size-4 text-muted" aria-hidden />
         </button>
+        <TonePickerRow
+          kind="ringtone"
+          icon={<BellRing className="size-5" aria-hidden />}
+          title={t('tones.ringtone')}
+          hint={t('tones.numberRingtoneHint')}
+          defaultLabel={t('tones.numberRingtoneDefault')}
+          value={number.ringtone}
+          onPick={(ringtone) => update.mutate({ ringtone })}
+        />
+        <TonePickerRow
+          kind="callerTune"
+          icon={<Music className="size-5" aria-hidden />}
+          title={t('tones.callerTune')}
+          hint={t('tones.callerTuneHint')}
+          defaultLabel={t('tones.callerTuneDefault')}
+          value={number.callerTune}
+          onPick={(callerTune) => update.mutate({ callerTune })}
+        />
       </Card>
       {update.error && <p className="mt-2 text-sm text-danger">{update.error.message}</p>}
 

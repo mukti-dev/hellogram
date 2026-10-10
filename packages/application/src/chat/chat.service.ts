@@ -224,16 +224,22 @@ export class ChatService {
   async updateSettings(
     actor: Actor,
     conversationId: string,
-    patch: { nickname?: string | null | undefined; mutedUntil?: Date | null | undefined; retention?: Retention | undefined },
+    patch: {
+      nickname?: string | null | undefined;
+      mutedUntil?: Date | null | undefined;
+      retention?: Retention | undefined;
+      ringtone?: string | null | undefined;
+    },
   ): Promise<ConversationView> {
     const view = await this.view(actor, conversationId);
     const now = this.deps.clock.now();
-    const memberPatch: { nickname?: string | null; mutedUntil?: Date | null } = {};
+    const memberPatch: { nickname?: string | null; mutedUntil?: Date | null; ringtone?: string | null } = {};
     if (patch.nickname !== undefined) memberPatch.nickname = normalizeNickname(patch.nickname);
     if (patch.mutedUntil !== undefined) memberPatch.mutedUntil = patch.mutedUntil;
+    if (patch.ringtone !== undefined) memberPatch.ringtone = patch.ringtone;
     if (Object.keys(memberPatch).length > 0) {
       await this.deps.conversations.updateMember(conversationId, view.myPersona.id, memberPatch);
-      // Nickname and mute are private: only this account's devices hear about it.
+      // Nickname, mute and ringtone are private: only this account's devices hear about it.
       await this.deps.events.publish({
         type: 'conversation.private_updated',
         payload: { accountId: actor.accountId, conversationId },

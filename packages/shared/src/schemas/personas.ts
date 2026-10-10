@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { LABEL_ICONS, LIMITS, RETENTION_OPTIONS } from '../constants.js';
+import { CALLER_TUNES, RINGTONES } from '../tones.js';
 
 export const labelIconSchema = z.enum(LABEL_ICONS);
 export const retentionSchema = z.enum(RETENTION_OPTIONS);
@@ -22,6 +23,10 @@ export const ownPersonaSchema = z.object({
   readReceipts: z.boolean(),
   dndUntil: z.string().nullable(),
   defaultRetention: retentionSchema,
+  /** null = the device's own ringtone. */
+  ringtone: z.enum(RINGTONES).nullable(),
+  /** What callers hear while this number rings; null = the standard ringback. */
+  callerTune: z.enum(CALLER_TUNES).nullable(),
   hasPin: z.boolean(),
   /** True when a PIN is set and this device hasn't unlocked it (Phase 7). */
   locked: z.boolean(),
@@ -68,6 +73,8 @@ export const updatePersonaBody = z
     readReceipts: z.boolean(),
     dndUntil: z.iso.datetime().nullable(),
     defaultRetention: retentionSchema,
+    ringtone: z.enum(RINGTONES).nullable(),
+    callerTune: z.enum(CALLER_TUNES).nullable(),
   })
   .partial();
 export type UpdatePersonaBody = z.infer<typeof updatePersonaBody>;

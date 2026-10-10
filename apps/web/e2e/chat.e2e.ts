@@ -12,7 +12,7 @@ test('two browsers chat live with ticks and typing', async ({ browser }) => {
   await expect(visitor.getByRole('log').getByText('Is this still available?')).toBeVisible();
 
   // Owner replies; visitor gets it live (no reload).
-  await owner.getByLabel('Type a message…').fill('Yes, it is. Are you interested?');
+  await owner.getByLabel('Message', { exact: true }).fill('Yes, it is. Are you interested?');
   await owner.getByRole('button', { name: 'Send' }).click();
   await expect(visitor.getByRole('log').getByText('Yes, it is. Are you interested?')).toBeVisible();
 
@@ -20,7 +20,7 @@ test('two browsers chat live with ticks and typing', async ({ browser }) => {
   await expect(owner.getByRole('log').getByRole('img', { name: 'Read' }).first()).toBeVisible();
 
   // Typing indicator.
-  await visitor.getByLabel('Type a message…').pressSequentially('Can you share');
+  await visitor.getByLabel('Message', { exact: true }).pressSequentially('Can you share');
   await expect(owner.getByText('typing…')).toBeVisible();
   await visitor.getByRole('button', { name: 'Send' }).click();
   await expect(owner.getByRole('log').getByText('Can you share')).toBeVisible();

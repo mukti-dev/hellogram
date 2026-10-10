@@ -1,4 +1,4 @@
-import type { CallSignal, IncomingCallEvent } from '@hellogram/shared';
+import type { CallerTune, CallSignal, IncomingCallEvent, Ringtone } from '@hellogram/shared';
 import { create } from 'zustand';
 import { ApiError } from '../../../core/http/api-error.js';
 import { getSocket } from '../../../core/realtime/socket.js';
@@ -29,6 +29,10 @@ interface CallState {
   noiseCancellationActive: boolean;
   endedLabel: string | null;
   error: string | null;
+  /** Incoming: the ringtone chosen for this chat / number (null = this device's). */
+  ringtone: Ringtone | null;
+  /** Outgoing: their caller tune, once the server has said (undefined = not yet). */
+  callerTune: CallerTune | null | undefined;
   startOutgoing: (conversationId: string, party: CallParty) => Promise<void>;
   receiveIncoming: (event: IncomingCallEvent, party: CallParty) => void;
   accept: () => Promise<void>;
@@ -83,6 +87,8 @@ const IDLE = {
   noiseCancellationActive: false,
   endedLabel: null,
   error: null,
+  ringtone: null,
+  callerTune: undefined,
 };
 
 export const useCallStore = create<CallState>()((set, get) => {
@@ -135,7 +141,7 @@ export const useCallStore = create<CallState>()((set, get) => {
       set({ ...IDLE, phase: 'outgoing', direction: 'outgoing', party });
       try {
         const res = await callsApi.start(conversationId);
-        set({ callId: res.callId });
+        set({ callId: res.callId, callerTune: res.callerTune });
         await makeEngine(res.callId, res.iceServers);
         // Our own ring-out timer mirrors the server's 45 s timeout.
         ringTimer = setTimeout(() => {
@@ -164,7 +170,15 @@ export const useCallStore = create<CallState>()((set, get) => {
     receiveIncoming(event, party) {
       // Already busy on this device: the server treats us as busy, nothing to show.
       if (get().phase !== 'idle') return;
-      set({ ...IDLE, phase: 'incoming', direction: 'incoming', callId: event.callId, party, locked: event.caller === null });
+      set({
+        ...IDLE,
+        phase: 'incoming',
+        direction: 'incoming',
+        callId: event.callId,
+        party,
+        locked: event.caller === null,
+        ringtone: event.ringtone,
+      });
     },
 
     async accept() {

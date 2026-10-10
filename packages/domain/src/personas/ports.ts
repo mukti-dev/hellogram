@@ -23,6 +23,8 @@ export interface PersonaSettingsPatch {
   readReceipts?: boolean;
   dndUntil?: Date | null;
   defaultRetention?: Retention;
+  ringtone?: string | null;
+  callerTune?: string | null;
 }
 
 export interface PersonaRepository {
