@@ -95,6 +95,7 @@ export class CallService {
       suppressed: ringOut,
     });
     await this.deps.lock.acquire(actor.accountId, call.id, LOCK_SECONDS);
+    await this.deps.lock.bindSession(actor.sessionId, call.id, LOCK_SECONDS);
     this.deps.timeouts?.schedule(call.id, RING_SECONDS * 1000);
 
     if (!ringOut) {
@@ -129,6 +130,7 @@ export class CallService {
       throw new DomainError(ErrorCode.CALL_NOT_ALLOWED, 'This call has ended');
     }
     this.deps.timeouts?.cancel(call.id);
+    await this.deps.lock.bindSession(actor.sessionId, call.id, LOCK_SECONDS);
     await this.publish('call.accepted', call, { acceptedBySessionId: actor.sessionId });
     return { iceServers: this.deps.turn.issue(call.id), iceTransportPolicy: 'relay' };
   }
@@ -173,6 +175,15 @@ export class CallService {
     if (await this.deps.calls.transition(call.id, ['ringing'], { status: 'missed', endReason: 'cancelled', endedAt: now })) {
       return this.finish(call, 'cancelled', true);
     }
+  }
+
+  /**
+   * The device a call runs on went away (app closed or crashed, tab closed, no network) and didn't
+   * come back: hang up for it, so neither side is left in a call that can't continue.
+   */
+  async dropSession(actor: Actor): Promise<void> {
+    const callId = await this.deps.lock.sessionCall(actor.sessionId);
+    if (callId) await this.end(actor, callId).catch(() => undefined);
   }
 
   /** 45 s without an answer (or a suppressed / busy call) → missed. */

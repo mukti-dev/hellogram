@@ -2,6 +2,7 @@ import type { CallLock } from '@hellogram/domain';
 import type { Redis } from 'ioredis';
 
 const key = (accountId: string) => `hg:call:acct:${accountId}`;
+const sessionKey = (sessionId: string) => `hg:call:sess:${sessionId}`;
 
 export class RedisCallLock implements CallLock {
   constructor(private readonly redis: Redis) {}
@@ -27,5 +28,13 @@ export class RedisCallLock implements CallLock {
 
   holder(accountId: string): Promise<string | null> {
     return this.redis.get(key(accountId));
+  }
+
+  async bindSession(sessionId: string, callId: string, ttlSeconds: number): Promise<void> {
+    await this.redis.set(sessionKey(sessionId), callId, 'EX', ttlSeconds);
+  }
+
+  sessionCall(sessionId: string): Promise<string | null> {
+    return this.redis.get(sessionKey(sessionId));
   }
 }
