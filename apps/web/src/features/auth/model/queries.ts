@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
+import { forgetBrowserPush } from '../../../core/push/browser-push.js';
 import { authApi, meApi } from '../api/auth.api.js';
 import { useAuthStore } from './auth-store.js';
 
@@ -22,7 +23,10 @@ export function useLogout() {
   const navigate = useNavigate();
   const signOut = useAuthStore((s) => s.signOut);
   return useMutation({
-    mutationFn: authApi.logout,
+    mutationFn: async () => {
+      await forgetBrowserPush();
+      await authApi.logout();
+    },
     onSettled: () => {
       signOut();
       client.clear();

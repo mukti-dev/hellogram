@@ -2,6 +2,7 @@ import { cn } from '@hellogram/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router';
+import { relinkBrowserPush } from '../../core/push/browser-push.js';
 import { CheckoutDialog } from '../../features/billing/CheckoutDialog.js';
 import { CallOverlay } from '../../features/calls/components/CallOverlay.js';
 import { useCallNotificationActions } from '../../features/calls/model/call-notifications.js';
@@ -21,6 +22,7 @@ export function AppShell() {
   const inChat = /^\/inbox\/(?!requests)[^/]+/.test(path);
   const client = useQueryClient();
   useEffect(() => startUnlockExpiry(() => void client.invalidateQueries()), [client]);
+  useEffect(() => void relinkBrowserPush(), []);
   useCallNotificationActions();
   return (
     <div className="flex h-dvh overflow-hidden bg-bg text-fg">

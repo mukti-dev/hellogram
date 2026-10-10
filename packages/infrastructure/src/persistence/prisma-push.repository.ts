@@ -16,11 +16,19 @@ export class PrismaPushSubscriptionRepository implements PushSubscriptionReposit
     await this.db.pushSubscription.deleteMany({ where: { accountId, endpoint } });
   }
 
-  listForAccount(accountId: string): Promise<PushSubscriptionRecord[]> {
-    return this.db.pushSubscription.findMany({
-      where: { accountId },
-      select: { id: true, endpoint: true, p256dh: true, auth: true },
+  /** Only browsers whose session is still signed in (logged out or expired: no notifications). */
+  async listForAccount(accountId: string): Promise<PushSubscriptionRecord[]> {
+    const subs = await this.db.pushSubscription.findMany({
+      where: { accountId, sessionId: { not: null } },
+      select: { id: true, sessionId: true, endpoint: true, p256dh: true, auth: true },
     });
+    if (!subs.length) return [];
+    const live = await this.db.session.findMany({
+      where: { id: { in: subs.map((s) => s.sessionId!) }, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { id: true },
+    });
+    const liveIds = new Set(live.map((s) => s.id));
+    return subs.filter((s) => liveIds.has(s.sessionId!)).map(({ sessionId: _, ...sub }) => sub);
   }
 
   async deleteById(id: string) {
