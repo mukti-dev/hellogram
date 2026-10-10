@@ -1,5 +1,5 @@
 import type { Persona } from '@hellogram/domain';
-import { LABEL_ICONS, type LabelIcon } from '@hellogram/shared';
+import { LABEL_ICONS, type ChatRetention, type LabelIcon } from '@hellogram/shared';
 
 /** Columns needed to build a domain Persona (pinHash is only checked for presence). */
 export const personaSelect = {
@@ -24,12 +24,24 @@ export const personaSelect = {
   retiredAt: true,
 } as const;
 
-/** As read from the database: the icon is plain text there. */
-export type PersonaRow = Omit<Persona, 'hasPin' | 'labelIcon'> & { pinHash: string | null; labelIcon: string };
+/**
+ * As read from the database: the icon is plain text there, and the retention column shares the
+ * chats' enum (which also has "custom", never stored as a number's default).
+ */
+export type PersonaRow = Omit<Persona, 'hasPin' | 'labelIcon' | 'defaultRetention'> & {
+  pinHash: string | null;
+  labelIcon: string;
+  defaultRetention: ChatRetention;
+};
 
 /** Unknown icon keys (e.g. one removed from the set later) fall back to the plain tag. */
 export const toLabelIcon = (icon: string): LabelIcon => ((LABEL_ICONS as readonly string[]).includes(icon) ? (icon as LabelIcon) : 'tag');
 
-export function toPersona({ pinHash, labelIcon, ...row }: PersonaRow): Persona {
-  return { ...row, labelIcon: toLabelIcon(labelIcon), hasPin: pinHash !== null };
+export function toPersona({ pinHash, labelIcon, defaultRetention, ...row }: PersonaRow): Persona {
+  return {
+    ...row,
+    labelIcon: toLabelIcon(labelIcon),
+    defaultRetention: defaultRetention === 'custom' ? 'd30' : defaultRetention,
+    hasPin: pinHash !== null,
+  };
 }

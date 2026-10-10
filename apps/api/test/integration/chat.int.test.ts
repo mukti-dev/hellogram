@@ -1,4 +1,4 @@
-import type { ConversationDto, InboxDto, MessagePageDto } from '@hellogram/shared';
+import type { ConversationDto, InboxDto, MessageDto, MessagePageDto } from '@hellogram/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { clientId, connectedPair, createNumber, sendMessage } from './fixtures.js';
 import { assertNoAccountLeak, createHarness, type Harness, type User } from './harness.js';
@@ -164,6 +164,38 @@ describe('retention, clear chat and closed chats (rules 7, 21, 23)', () => {
     expect((await messages(owner, conversationId))[0]).toMatchObject({ type: 'system', system: { byMe: false, value: 'd7' } });
   });
 
+  it('custom history: 5 minutes … 30 days, for both sides, with the minutes in the notice', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const patch = (payload: Record<string, unknown>) =>
+      visitor.request<ConversationDto & { error?: { code: string } }>({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload });
+
+    const res = await patch({ retention: 'custom', retentionMinutes: 150 });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ retention: 'custom', retentionMinutes: 150 });
+    expect((await messages(visitor, conversationId))[0]).toMatchObject({
+      type: 'system',
+      system: { kind: 'retention_changed', byMe: true, value: 'custom', minutes: 150 },
+    });
+    expect((await messages(owner, conversationId))[0]).toMatchObject({ system: { byMe: false, value: 'custom', minutes: 150 } });
+    const ownerView = await owner.request<ConversationDto>({ method: 'GET', url: `/v1/conversations/${conversationId}` });
+    expect(ownerView.body).toMatchObject({ retention: 'custom', retentionMinutes: 150 });
+
+    // Same value again: no new notice.
+    await patch({ retention: 'custom', retentionMinutes: 150 });
+    expect((await messages(owner, conversationId)).filter((m) => m.type === 'system')).toHaveLength(1);
+
+    for (const bad of [{ retention: 'custom' }, { retention: 'custom', retentionMinutes: 4 }, { retention: 'custom', retentionMinutes: 43_201 }]) {
+      const r = await patch(bad);
+      expect(r.status).toBe(400);
+      expect(r.body.error?.code).toBe('VALIDATION_FAILED');
+    }
+
+    // Back to a preset: the minutes go away, presets carry minutes: null.
+    const preset = await patch({ retention: 'd7', retentionMinutes: 30 });
+    expect(preset.body).toMatchObject({ retention: 'd7', retentionMinutes: null });
+    expect((await messages(owner, conversationId))[0]).toMatchObject({ system: { value: 'd7', minutes: null } });
+  });
+
   it('clear chat empties only my side', async () => {
     const { owner, visitor, conversationId } = await connectedPair(h);
     await sendMessage(visitor, conversationId, 'one');
@@ -194,5 +226,63 @@ describe('inbox filters use the user’s own labels', () => {
     expect(dating.body.items.map((c) => c.me.labelName)).toEqual(['Dating']);
     const olx = await owner.request<InboxDto>({ method: 'GET', url: '/v1/conversations?label=OLX' });
     expect(olx.body.items.map((c) => c.me.id)).toEqual([ownerNumber.id]);
+  });
+});
+
+describe('replies', () => {
+  const reply = (u: User, conversationId: string, replyToId: string, body = 'Yes, it is') =>
+    u.request<MessageDto & { error?: { code: string } }>({
+      method: 'POST',
+      url: `/v1/conversations/${conversationId}/messages`,
+      payload: { clientMessageId: clientId(), body, replyToId },
+    });
+
+  it('carries a quote of the original, from each side’s point of view, in every list', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const original = await sendMessage(visitor, conversationId, 'Is the laptop still available?');
+    const res = await reply(owner, conversationId, original.body.id);
+    expect(res.status).toBe(201);
+    expect(res.body.replyTo).toEqual({ id: original.body.id, mine: false, kind: 'text', text: 'Is the laptop still available?', available: true });
+
+    const theirs = (await messages(visitor, conversationId)).find((m) => m.id === res.body.id);
+    expect(theirs?.replyTo).toMatchObject({ id: original.body.id, mine: true, available: true });
+    expect((await inbox(visitor)).items[0]?.lastMessage?.replyTo).toMatchObject({ id: original.body.id, mine: true });
+    // Plain messages have none.
+    expect((await messages(visitor, conversationId)).find((m) => m.id === original.body.id)?.replyTo).toBeNull();
+  });
+
+  it('long text is cut to 200 characters', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const original = await sendMessage(visitor, conversationId, 'x'.repeat(1000));
+    const res = await reply(owner, conversationId, original.body.id);
+    expect(res.body.replyTo?.text).toHaveLength(200);
+  });
+
+  it('refuses unknown, system, deleted and other chats’ messages with REPLY_NOT_AVAILABLE', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const other = await connectedPair(h);
+    const elsewhere = await sendMessage(other.visitor, other.conversationId, 'other chat');
+    await visitor.request({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'd7' } });
+    const system = (await messages(owner, conversationId)).find((m) => m.type === 'system')!;
+    const gone = await sendMessage(visitor, conversationId, 'soon deleted');
+    await visitor.request({ method: 'DELETE', url: `/v1/messages/${gone.body.id}?scope=everyone` });
+
+    for (const id of ['0190a5e0-0000-7000-8000-000000000000', elsewhere.body.id, system.id, gone.body.id]) {
+      const res = await reply(owner, conversationId, id);
+      expect(res.status).toBe(422);
+      expect(res.body.error?.code).toBe('REPLY_NOT_AVAILABLE');
+    }
+  });
+
+  it('once the original is deleted for everyone, the quote says it’s not available', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    const original = await sendMessage(visitor, conversationId, 'private detail');
+    const res = await reply(owner, conversationId, original.body.id);
+    await visitor.request({ method: 'DELETE', url: `/v1/messages/${original.body.id}?scope=everyone` });
+    for (const u of [owner, visitor]) {
+      const page = await u.request<MessagePageDto>({ method: 'GET', url: `/v1/conversations/${conversationId}/messages` });
+      expect(page.body.items.find((m) => m.id === res.body.id)?.replyTo).toMatchObject({ available: false, text: null });
+      expect(JSON.stringify(page.body)).not.toContain('private detail');
+    }
   });
 });

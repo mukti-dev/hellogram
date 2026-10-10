@@ -93,7 +93,7 @@ export const handlers: Record<string, Record<string, JobHandler>> = {
 };
 
 export const repeatableJobs: RepeatableJob[] = [
-  { queue: QUEUES.maintenance, name: 'retention.expireContent', every: 10 * MIN },
+  { queue: QUEUES.maintenance, name: 'retention.expireContent', every: MIN }, // 1 min: custom history can be as short as 5 min
   { queue: QUEUES.maintenance, name: 'trash.eraseContent', every: 60 * MIN },
   { queue: QUEUES.maintenance, name: 'trash.purgeFiles', every: 24 * 60 * MIN },
   { queue: QUEUES.maintenance, name: 'account.eraseDeleted', every: 60 * MIN },

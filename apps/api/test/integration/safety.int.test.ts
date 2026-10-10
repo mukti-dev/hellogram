@@ -165,6 +165,36 @@ describe('retention sweeper and metadata purge (rules 21–22, §9)', () => {
     expect(byId[fresh.body.id]).toMatchObject({ body: 'fresh', contentPurgedAt: null });
   });
 
+  it('custom history: messages older than the chat’s own minutes disappear', async () => {
+    const { owner, visitor, conversationId } = await connectedPair(h);
+    await owner.request({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'custom', retentionMinutes: 5 } });
+    const old = await sendMessage(visitor, conversationId, 'six minutes old');
+    const fresh = await sendMessage(visitor, conversationId, 'four minutes old');
+    await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '6 minutes' WHERE id = $1`, [old.body.id]);
+    await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '4 minutes' WHERE id = $1`, [fresh.body.id]);
+
+    await h.container.maintenanceService.expireContent();
+    const rows = await h.db.query(`SELECT id, "expiredAt" FROM messages WHERE id = ANY($1::uuid[])`, [[old.body.id, fresh.body.id]]);
+    const byId = Object.fromEntries(rows.rows.map((r) => [r.id, r.expiredAt]));
+    expect(byId[old.body.id]).not.toBeNull();
+    expect(byId[fresh.body.id]).toBeNull();
+    // Gone from the chat for both sides; the notice about the change stays.
+    for (const u of [owner, visitor]) {
+      const items = await messages(u, conversationId);
+      expect(items.map((m) => m.id)).not.toContain(old.body.id);
+      expect(items.map((m) => m.id)).toContain(fresh.body.id);
+      expect(items.some((m) => m.type === 'system')).toBe(true);
+    }
+    expect(JSON.stringify(await inbox(owner))).not.toContain('six minutes old');
+
+    // A longer custom time keeps them: 60 minutes.
+    await owner.request({ method: 'PATCH', url: `/v1/conversations/${conversationId}`, payload: { retention: 'custom', retentionMinutes: 60 } });
+    const kept = await sendMessage(visitor, conversationId, 'thirty minutes old');
+    await h.db.query(`UPDATE messages SET "createdAt" = now() - interval '30 minutes' WHERE id = $1`, [kept.body.id]);
+    await h.container.maintenanceService.expireContent();
+    expect((await h.db.query(`SELECT "expiredAt" FROM messages WHERE id = $1`, [kept.body.id])).rows[0].expiredAt).toBeNull();
+  });
+
   it('a message deleted for everyone is gone for both sides but stays in report evidence for 30 days', async () => {
     const { owner, visitor, conversationId } = await connectedPair(h);
     const msg = await sendMessage(visitor, conversationId, 'threatening words');

@@ -54,8 +54,14 @@ onRealtime('message:deleted', (client) => (p: { conversationId: string; messageI
   updateMessages(client, p.conversationId, (m) => {
     if (m.id !== p.messageId) return m;
     if (m.attachment) forgetAttachment(m.attachment.id);
-    return p.scope === 'me' ? null : { ...m, deleted: true, body: null, attachment: null };
+    return p.scope === 'me' ? null : { ...m, deleted: true, body: null, attachment: null, gif: null, replyTo: null };
   });
+  // Replies quoting it now say "Original message not available".
+  if (p.scope === 'everyone') {
+    updateMessages(client, p.conversationId, (m) =>
+      m.replyTo?.id === p.messageId ? { ...m, replyTo: { ...m.replyTo, text: null, available: false } } : m,
+    );
+  }
   void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });
 });
 

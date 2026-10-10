@@ -26,10 +26,19 @@ export const LIMITS = {
   ATTACHMENT_MAX_BYTES: 10 * 1024 * 1024,
   ATTACHMENT_NAME_MAX: 120,
   ATTACHMENT_CAPTION_MAX: 1000,
+  /** A chat's custom history time: from 5 minutes to 30 days. */
+  CUSTOM_RETENTION_MIN_MINUTES: 5,
+  CUSTOM_RETENTION_MAX_MINUTES: 30 * 24 * 60,
+  /** The quoted text of the message a reply points to. */
+  REPLY_PREVIEW_MAX: 200,
 } as const;
 
 export const RETENTION_OPTIONS = ['forever', 'd90', 'd30', 'd7', 'h24'] as const;
 export type Retention = (typeof RETENTION_OPTIONS)[number];
+
+/** A chat can also use its own time ("custom", with `retentionMinutes`); a number's default can't. */
+export const CHAT_RETENTION_OPTIONS = [...RETENTION_OPTIONS, 'custom'] as const;
+export type ChatRetention = (typeof CHAT_RETENTION_OPTIONS)[number];
 
 /**
  * Icons a number's label can carry. Labels themselves are free text the user writes

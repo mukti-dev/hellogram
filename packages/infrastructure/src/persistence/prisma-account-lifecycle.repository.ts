@@ -93,7 +93,7 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
         where: { personaId: { in: ids } },
         select: {
           personaId: true, nickname: true, clearedBefore: true, mutedUntil: true,
-          conversation: { select: { id: true, retention: true, createdAt: true, closedAt: true } },
+          conversation: { select: { id: true, retention: true, retentionMinutes: true, createdAt: true, closedAt: true } },
         },
       }),
       this.db.call.findMany({
@@ -124,6 +124,7 @@ export class PrismaAccountLifecycleRepository implements AccountLifecycleReposit
         viaNumber: personas.find((p) => p.id === m.personaId)?.code,
         nickname: m.nickname,
         retention: m.conversation.retention,
+        retentionMinutes: m.conversation.retentionMinutes,
         createdAt: m.conversation.createdAt,
         closedAt: m.conversation.closedAt,
         messages: messages.map((x) => ({

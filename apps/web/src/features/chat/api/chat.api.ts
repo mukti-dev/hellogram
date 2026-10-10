@@ -27,10 +27,15 @@ export const chatApi = {
   unreadCount: () => api<{ count: number }>('/v1/conversations/unread-count'),
   get: (id: string) => api<ConversationDto>(`/v1/conversations/${id}`),
   messages: (id: string, cursor?: string) => api<MessagePageDto>(`/v1/conversations/${id}/messages${qs({ cursor })}`),
-  send: (id: string, clientMessageId: string, body: string | undefined, attachmentId?: string) =>
+  send: (id: string, clientMessageId: string, body: string | undefined, extra: { attachmentId?: string; replyToId?: string } = {}) =>
     api<MessageDto>(`/v1/conversations/${id}/messages`, {
       method: 'POST',
-      body: { clientMessageId, ...(body ? { body } : {}), ...(attachmentId ? { attachmentId } : {}) },
+      body: {
+        clientMessageId,
+        ...(body ? { body } : {}),
+        ...(extra.attachmentId ? { attachmentId: extra.attachmentId } : {}),
+        ...(extra.replyToId ? { replyToId: extra.replyToId } : {}),
+      },
     }),
   /** Step 1 of sending a file; the returned id goes into `send`. */
   uploadAttachment: (id: string, file: Blob, fileName: string) =>

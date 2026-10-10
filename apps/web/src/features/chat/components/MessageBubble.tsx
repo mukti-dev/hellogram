@@ -1,23 +1,46 @@
-import type { MessageDto } from '@hellogram/shared';
+import type { MessageDto, ReplyPreviewDto } from '@hellogram/shared';
 import { DropdownMenu, cn } from '@hellogram/ui';
-import { ChevronDown, Copy, Trash2 } from 'lucide-react';
+import { ChevronDown, Copy, Reply, Trash2 } from 'lucide-react';
 import { t } from '../../../i18n/t.js';
 import { clockTime } from '../../../shared/format.js';
 import { useDeleteMessage } from '../model/queries.js';
+import { canReplyTo, quoteAuthor, quoteText } from '../model/reply.js';
+import { retentionPeriod } from '../model/retention.js';
 import { AttachmentView, GifView } from './AttachmentView.js';
 import { Ticks, type TickState } from './Ticks.js';
-
-const PERIOD: Record<string, string> = { d90: '90 days', d30: '30 days', d7: '7 days', h24: '24 hours' };
 
 export function systemText(m: MessageDto, otherName: string): string {
   if (m.system?.kind === 'retention_changed') {
     if (m.system.value === 'forever') {
       return m.system.byMe ? t('chat.youOffRetention') : t('chat.theyOffRetention', { name: otherName });
     }
-    const period = PERIOD[m.system.value] ?? m.system.value;
+    const period = retentionPeriod(m.system.value, m.system.minutes) ?? m.system.value;
     return m.system.byMe ? t('chat.youSetRetention', { period }) : t('chat.theySetRetention', { name: otherName, period });
   }
   return t('chat.numberGone');
+}
+
+/** The quoted message inside a reply bubble. Clicking it jumps to the original. */
+function Quote({ quote, otherName, mine, onJump }: { quote: ReplyPreviewDto; otherName: string; mine: boolean; onJump?: ((id: string) => void) | undefined }) {
+  const text = quoteText(quote);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onJump?.(quote.id);
+      }}
+      disabled={!quote.available}
+      className={cn(
+        'mb-1 block w-full min-w-0 rounded-lg border-l-4 px-2.5 py-1 text-left text-[13px] leading-snug',
+        mine ? 'border-white/70 bg-white/15' : 'border-primary bg-surface-1/70',
+        quote.available ? 'cursor-pointer' : 'cursor-default',
+      )}
+    >
+      <span className={cn('block truncate text-xs font-semibold', mine ? 'text-white' : 'text-primary')}>{quoteAuthor(quote, otherName)}</span>
+      <span className={cn('line-clamp-2 break-words', !quote.available && 'italic', mine ? 'text-white/85' : 'text-muted')}>{text}</span>
+    </button>
+  );
 }
 
 export function MessageBubble({
@@ -25,12 +48,20 @@ export function MessageBubble({
   otherName,
   tick,
   onRetry,
+  onReply,
+  onJump,
+  highlighted,
 }: {
   message: MessageDto;
   otherName: string;
   /** Overrides the tick for optimistic (outbox) messages. */
   tick?: TickState;
-  onRetry?: () => void;
+  onRetry?: (() => void) | undefined;
+  onReply?: ((message: MessageDto) => void) | undefined;
+  /** Scroll to a quoted message. */
+  onJump?: ((messageId: string) => void) | undefined;
+  /** Briefly lit after jumping to it from a quote. */
+  highlighted?: boolean | undefined;
 }) {
   const remove = useDeleteMessage(message.conversationId);
 
@@ -49,7 +80,10 @@ export function MessageBubble({
   const isOptimistic = Boolean(tick);
 
   return (
-    <div className={cn('group flex items-end gap-1', mine ? 'justify-end' : 'justify-start')}>
+    <div
+      data-message-id={message.id}
+      className={cn('group flex items-end gap-1 rounded-xl transition-colors duration-700', mine ? 'justify-end' : 'justify-start', highlighted && 'bg-primary/15')}
+    >
       <div
         className={cn(
           'relative max-w-[78%] rounded-2xl text-[15px] leading-snug',
@@ -61,6 +95,11 @@ export function MessageBubble({
         )}
         onClick={tick === 'failed' ? onRetry : undefined}
       >
+        {message.replyTo && !message.deleted && (
+          <div className={cn((message.attachment || message.gif) && 'px-0.5 pt-0.5')}>
+            <Quote quote={message.replyTo} otherName={otherName} mine={mine && !sticker} onJump={onJump} />
+          </div>
+        )}
         {message.attachment && <AttachmentView attachment={message.attachment} mine={mine} />}
         {message.gif && <GifView gif={message.gif} />}
         {(message.deleted || message.body || (!message.attachment && !message.gif)) && (
@@ -86,6 +125,9 @@ export function MessageBubble({
                 </button>
               }
               items={[
+                ...(onReply && canReplyTo(message)
+                  ? [{ label: t('chat.reply'), icon: <Reply className="size-4" />, onSelect: () => onReply(message), movesFocus: true }]
+                  : []),
                 ...(message.body
                   ? [{ label: t('chat.copy'), icon: <Copy className="size-4" />, onSelect: () => void navigator.clipboard?.writeText(message.body ?? '') }]
                   : []),

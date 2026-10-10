@@ -1,4 +1,4 @@
-import type { GifDto, Retention } from '@hellogram/shared';
+import type { ChatRetention, GifDto } from '@hellogram/shared';
 import type { Page } from '../requests/ports.js';
 import type { Attachment } from './attachments.js';
 import type { ConversationView, InboxFilter, InboxRow, Message, SystemPayload } from './chat.js';
@@ -18,6 +18,8 @@ export interface NewMessage {
    */
   attachmentId?: string | null;
   gif?: GifDto | null;
+  /** Already checked by the service: a message of the same conversation with content. */
+  replyToId?: string | null;
 }
 
 export type InsertMessageResult = { message: Message; created: boolean } | { attachmentRejected: true };
@@ -72,7 +74,8 @@ export interface ConversationRepository {
   hideMessage(messageId: string, personaId: string): Promise<void>;
   deleteForEveryone(messageId: string, at: Date): Promise<void>;
   updateMember(conversationId: string, personaId: string, patch: { nickname?: string | null; mutedUntil?: Date | null; clearedBefore?: Date }): Promise<void>;
-  setRetention(conversationId: string, retention: Retention, byPersonaId: string, at: Date): Promise<void>;
+  /** `minutes` only for "custom" (null otherwise). */
+  setRetention(conversationId: string, retention: ChatRetention, minutes: number | null, byPersonaId: string, at: Date): Promise<void>;
   /** Block effects (§6.3): hide for the blocker, mask the blocker for the blocked side. */
   applyBlock(conversationId: string, blockerPersonaId: string, blockedPersonaId: string, at: Date): Promise<void>;
   removeBlock(conversationId: string): Promise<void>;

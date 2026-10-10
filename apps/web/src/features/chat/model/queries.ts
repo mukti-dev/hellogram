@@ -2,7 +2,7 @@ import type { MessageDto, UpdateConversationBody } from '@hellogram/shared';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { chatApi, type InboxFilter } from '../api/chat.api.js';
 import { forgetAttachment } from './attachments.js';
-import { upsertMessage } from './cache.js';
+import { updateMessages, upsertMessage } from './cache.js';
 import { chatKeys } from './keys.js';
 
 export const useInbox = (filter: InboxFilter) =>
@@ -57,8 +57,12 @@ export function useDeleteMessage(conversationId: string) {
       chatApi.deleteMessage(message.id, scope),
     onSuccess: (_void, { message, scope }) => {
       if (message.attachment) forgetAttachment(message.attachment.id);
-      if (scope === 'everyone') upsertMessage(client, { ...message, deleted: true, body: null, attachment: null });
-      else void client.invalidateQueries({ queryKey: chatKeys.messages(conversationId) });
+      if (scope === 'everyone') {
+        upsertMessage(client, { ...message, deleted: true, body: null, attachment: null, gif: null, replyTo: null });
+        updateMessages(client, conversationId, (m) =>
+          m.replyTo?.id === message.id ? { ...m, replyTo: { ...m.replyTo, text: null, available: false } } : m,
+        );
+      } else void client.invalidateQueries({ queryKey: chatKeys.messages(conversationId) });
       void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });
     },
   });

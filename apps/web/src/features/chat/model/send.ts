@@ -1,4 +1,4 @@
-import type { MessageDto } from '@hellogram/shared';
+import type { MessageDto, ReplyPreviewDto } from '@hellogram/shared';
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../../core/http/api-error.js';
 import { t } from '../../../i18n/t.js';
@@ -11,7 +11,12 @@ async function deliver(client: QueryClient, item: OutboxItem): Promise<void> {
   const outbox = useOutbox.getState();
   outbox.update(item.clientMessageId, { state: 'sending', error: undefined });
   try {
-    const message: MessageDto = await chatApi.send(item.conversationId, item.clientMessageId, item.body);
+    const message: MessageDto = await chatApi.send(
+      item.conversationId,
+      item.clientMessageId,
+      item.body,
+      item.replyTo ? { replyToId: item.replyTo.id } : {},
+    );
     upsertMessage(client, message);
     outbox.remove(item.clientMessageId);
     void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });
@@ -30,11 +35,12 @@ async function deliver(client: QueryClient, item: OutboxItem): Promise<void> {
 export function useSendMessage(conversationId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (body: string) => {
+    mutationFn: async ({ body, replyTo }: { body: string; replyTo?: ReplyPreviewDto | undefined }) => {
       const item: OutboxItem = {
         clientMessageId: newClientMessageId(),
         conversationId,
         body,
+        replyTo,
         createdAt: new Date().toISOString(),
         state: 'sending',
       };
@@ -51,11 +57,14 @@ export function useSendMessage(conversationId: string) {
 export function useSendAttachment(conversationId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async ({ file, caption }: { file: File; caption: string }) => {
+    mutationFn: async ({ file, caption, replyTo }: { file: File; caption: string; replyTo?: ReplyPreviewDto | undefined }) => {
       const prepared = await prepareFile(file);
       if (tooLarge(prepared)) throw new Error(t('chat.fileTooLarge'));
       const attachment = await chatApi.uploadAttachment(conversationId, prepared, file.name);
-      const message = await chatApi.send(conversationId, newClientMessageId(), caption.trim() || undefined, attachment.id);
+      const message = await chatApi.send(conversationId, newClientMessageId(), caption.trim() || undefined, {
+        attachmentId: attachment.id,
+        ...(replyTo ? { replyToId: replyTo.id } : {}),
+      });
       seedAttachment(attachment.id, prepared);
       upsertMessage(client, message);
       void client.invalidateQueries({ queryKey: ['conversations', 'inbox'] });

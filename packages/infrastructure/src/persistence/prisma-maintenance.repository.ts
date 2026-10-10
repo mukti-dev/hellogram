@@ -5,22 +5,27 @@ import type { PrismaClient } from '@hellogram/db';
 export class PrismaMaintenanceRepository implements MaintenanceRepository {
   constructor(private readonly db: PrismaClient) {}
 
-  /** Rule 22: hidden from both sides once older than the conversation's retention. */
+  /**
+   * Rule 22: hidden from both sides once older than the conversation's retention ("custom" = its own
+   * minutes). Runs every minute; messages_conversationId_expiredAt_createdAt_idx keeps it to an index
+   * range scan per non-forever chat (only unexpired rows past the cut-off are touched).
+   */
   expireContent(now: Date): Promise<number> {
     return this.db.$executeRaw`
       UPDATE messages m
          SET "expiredAt" = ${now}
         FROM conversations c
        WHERE m."conversationId" = c.id
+         AND c.retention <> 'forever'
          AND m."expiredAt" IS NULL
          AND m."contentPurgedAt" IS NULL
          AND m.type = 'text'
-         AND c.retention <> 'forever'
          AND m."createdAt" < ${now}::timestamptz - (CASE c.retention
                WHEN 'd90' THEN interval '90 days'
                WHEN 'd30' THEN interval '30 days'
                WHEN 'd7'  THEN interval '7 days'
                WHEN 'h24' THEN interval '24 hours'
+               WHEN 'custom' THEN make_interval(mins => c."retentionMinutes")
              END)`;
   }
 
