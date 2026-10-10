@@ -71,6 +71,9 @@ export interface CallLock {
   acquire(accountId: string, callId: string, ttlSeconds: number): Promise<boolean>;
   release(accountId: string, callId: string): Promise<void>;
   holder(accountId: string): Promise<string | null>;
+  /** The signed-in device (session) a call is running on, so the call can end when that device goes away. */
+  bindSession(sessionId: string, callId: string, ttlSeconds: number): Promise<void>;
+  sessionCall(sessionId: string): Promise<string | null>;
 }
 
 /** Short-lived TURN credentials bound to a call (coturn REST API / use-auth-secret). */
