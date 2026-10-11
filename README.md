@@ -8,7 +8,7 @@ Give out a number. Keep yours private. Chat and voice call without sharing your 
 
 ## Stack
 
-React + Vite PWA · Node + Fastify + Prisma · PostgreSQL 16 · Redis 7 · Socket.IO · BullMQ · WebRTC + coturn (relay-only).
+React + Vite PWA · Node + Fastify + Prisma · PostgreSQL 16 · Redis 7 · Socket.IO · BullMQ · WebRTC relay-only (Cloudflare TURN in production, coturn locally).
 Clean architecture: **Controller → Service → Repository** (architecture §3).
 
 | App | Port | What |
@@ -154,7 +154,7 @@ tests/load/  k6 scripts
 | 5 | Realtime chat: ticks, typing, delete, nicknames, retention, offline outbox | ✅ |
 | 6 | Safety: silent account-level blocks, reports + evidence, retention sweeper | ✅ |
 | 7 | PIN lock: unlock tokens, lockouts, forgot-PIN wipe | ✅ |
-| 8 | Voice calls: WebRTC relay-only via coturn, call screens, call log | ✅ |
+| 8 | Voice calls: WebRTC relay-only via TURN (Cloudflare in production), call screens, call log | ✅ |
 | 9 | Billing (Razorpay + dev simulator), GST invoices, Web Push | ✅ |
 | 10 | Admin + compliance: admin app, grievances, legal log, export, deletion, phone change | ✅ |
 | 11 | Hardening: security review fixes, a11y, PWA icons, prod builds, Docker, CI, runbooks | ✅ |

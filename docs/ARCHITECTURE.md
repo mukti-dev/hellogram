@@ -32,7 +32,7 @@
 |---|---|
 | Stack & style | React + Vite (web) · Node + Fastify + Prisma (backend). Clean architecture: Controller → Service → Repository (§3). |
 | Budget | ₹3,000–4,000 / month. Free / open-source code tools only; paid services are usage-based only. |
-| Voice | **WebRTC + Socket.IO signalling + coturn, relay-only.** No LiveKit, no STUN peer-to-peer (peers never see each other's IP). |
+| Voice | **WebRTC + Socket.IO signalling + TURN relay only** (Cloudflare TURN in production, coturn locally). No LiveKit, no STUN peer-to-peer (peers never see each other's IP). |
 | Admin | Separate `admin-api` process on a private domain. |
 | Error tracking | Sentry SDK → Sentry free plan, strict scrubbing. |
 | Number code | No prefix. `L DDDDDD L` → e.g. `A482719K`. Uppercase, letters exclude `I` and `O`. No checksum. Displayed exactly as stored, in monospace. Expandable to 7 digits later. |
@@ -1004,11 +1004,11 @@ When the app is closed, the service worker marks messages delivered on push rece
 
 1. Caller → `POST /calls`. Policy check. Redis lock `call:acct:<accountId>` for both accounts (busy → silent no-answer).
 2. Server creates `Call(ringing)`, schedules 45 s timeout job, emits `call:incoming` + push.
-3. Both sides receive **TURN credentials** (coturn `use-auth-secret`, HMAC, TTL 10 min, username bound to `callId`).
+3. Both sides receive **TURN credentials** — production: Cloudflare TURN (`generate-ice-servers`, TTL 4 h = the in-call lock; TURN URLs only, no port 53), requested *before* the call rings / is answered so a relay outage fails cleanly (503); development and CI: local coturn (`use-auth-secret`, HMAC, TTL 10 min).
 4. `RTCPeerConnection({ iceServers, iceTransportPolicy: "relay" })` — no host/srflx candidates, IPs never exchanged.
 5. SDP / ICE via `call:signal`. Audio only (Opus).
 6. Accept → `answered`; end / timeout / decline → final status; lock released.
-7. coturn: UDP 3478, TURN-TLS 443 fallback, `denied-peer-ip` for private ranges, `no-multicast-peers`, quotas per user.
+7. Cloudflare TURN: UDP/TCP 3478, UDP 443, TCP 80, TLS 5349/443 — reachable from restrictive networks; not on our server.
 8. `CallMediaProvider` interface keeps LiveKit a drop-in later.
 
 ---
@@ -1062,7 +1062,7 @@ Also: refresh-token rotation with reuse detection · CSRF protection on cookie e
 | `EmailProvider` | Console → AWS SES | ~$0.10 / 1,000 |
 | `BillingProvider` | Fake → Razorpay Subscriptions | ~2 % per payment |
 | `PushProvider` | Web Push (VAPID) | free |
-| `CallMediaProvider` | coturn relay | free (self-hosted) |
+| `CallMediaProvider` | Cloudflare TURN (coturn locally) | Cloudflare Realtime pricing |
 | Bot check | Cloudflare Turnstile | free |
 | Errors | Sentry free plan | free |
 
@@ -1138,7 +1138,7 @@ Recorded at the end of Phase 11. Where this section differs from §1–16, this 
 | PIN lock | Also required to change, share, pause, delete or re-avatar a locked number, and for its sent requests, calls log, export. |
 | Phone change | `POST /me/phone-change` always answers `204`; a taken number just never receives a code (no enumeration). |
 | Requests to deleted/banned numbers | Same generic `404` as a code that never existed. |
-| TURN | UDP/TCP 3478; TURN-over-TLS on **5349** (443 is Caddy on a single-IP server). |
+| TURN | Cloudflare's TURN service (2026-10-11, replaces our own coturn on the server). Keys: `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN`; required in production. coturn stays for development and CI only. |
 | Admin roles | Read from the database on every request (demotions apply immediately). |
 | Hosting: nginx, three domains (replaces Caddy) | `hellogram.in` → landing page (`apps/site`, static HTML; **Sign in** → `app.hellogram.in/login`). `app.hellogram.in` → web app, with `/v1`, `/socket.io`, `/health`, `/media` proxied to the API. `admin.hellogram.in` → admin app + `/admin/v1`, IP allowlist file. Share links are `hellogram.in/<code>` (`PUBLIC_BASE_URL=https://hellogram.in`); nginx 301s them to the app. One Let's Encrypt certificate (named `hellogram`) for all names incl. `turn.`; certbot renews (webroot), nginx reloads every 6 h, coturn gets a readable copy via a deploy hook. Strict CSP per site; Vite builds never inline assets as `data:` URLs (the CSP allows only same-origin fonts — previously a font subset was being blocked). Real client IP from Cloudflare is honoured only from Cloudflare's ranges. |
 | Number labels and media switch (replaces the OLX / Dating / Tenants / Other presets) | A number's label is the user's own text (`labelName`, 1–20 characters, required) plus an icon from a fixed set of 20 (`labelIcon`, `LABEL_ICONS` in packages/shared; the chip colour follows the icon). There are no preset labels — the form only hints at examples. Labels stay private to the owner. Inbox filters are the user's own distinct labels (`GET /v1/conversations?label=…`, case-insensitive). New switch `allowMedia` per number: a chat allows photos and files only when **both** numbers allow them (`mediaAllowed` on the conversation; uploads and sends otherwise get `403 MEDIA_NOT_ALLOWED`; the web app hides the paperclip). Migration `custom_labels_media` converted existing numbers: olx → "OLX" (shopping bag), dating → "Dating" (heart), tenants → "Tenants" (home), other → its text or "Other" (tag). |

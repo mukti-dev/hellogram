@@ -13,7 +13,7 @@ Target: one AWS Lightsail instance in Mumbai (ap-south-1), Docker Compose, nginx
 | `https://hellogram.in` | Landing page (+ `hellogram.in/A482719K` share links → the app) | nginx, `apps/site` |
 | `https://app.hellogram.in` | Web app; `/v1`, `/socket.io`, `/media` → API | nginx → `api:4000` |
 | `https://admin.hellogram.in` | Admin panel (allow-listed IPs only); `/admin/v1` → admin API | nginx → `admin-api:4100` |
-| `turn.hellogram.in` | Call relay, ports 3478 / 5349 | coturn (host network) |
+| Cloudflare TURN (`turn.cloudflare.com`) | Call relay — not on this server | Cloudflare Realtime, `CLOUDFLARE_TURN_*` |
 
 **How deploys work**: every push to `main` runs CI (`.github/workflows/ci.yml`: lint, typecheck, unit, integration,
 browser tests). If it passes, GitHub builds the five images (`infra/docker/docker-bake.hcl`), pushes them to
@@ -24,7 +24,7 @@ never builds anything.
 ### One-time setup
 
 1. **Lightsail instance**: Ubuntu 24.04, region Mumbai, 2 GB plan or larger. Attach a **static IP**. In
-   *Networking → IPv4 firewall* allow: SSH 22, HTTP 80, HTTPS 443, TCP+UDP 3478, TCP 5349, UDP 49152–65535.
+   *Networking → IPv4 firewall* allow: SSH 22, HTTP 80, HTTPS 443 (calls are relayed by Cloudflare, not this server).
 2. **Deploy key** (on your computer): `ssh-keygen -t ed25519 -f hellogram-deploy -C github-actions -N ""`.
 3. **Prepare the server**:
    ```bash
@@ -32,9 +32,9 @@ never builds anything.
    ssh ubuntu@<static-ip> "sudo bash setup-ubuntu.sh \"$(cat hellogram-deploy.pub)\""
    ```
    Installs Docker, a `deploy` user with that key, firewall, 2 GB swap, automatic security updates, SSH keys-only,
-   log rotation, nightly database backups (`/opt/hellogram/backups`, 7 days) and the weekly call-relay restart.
-4. **DNS** — A records to the static IP: `hellogram.in`, `www`, `app`, `admin`, `turn`. With Cloudflare, `turn`
-   must be **DNS only** (grey cloud).
+   log rotation and nightly database backups (`/opt/hellogram/backups`, 7 days).
+4. **DNS** — A records to the static IP: `hellogram.in`, `www`, `app`, `admin`. Calls need a **Cloudflare TURN key**
+   (Cloudflare dashboard → Realtime → TURN → create a key): its id and API token go in `infra/.env.production`.
 5. **GitHub** → repository *Settings*:
    - *Environments → New environment* `production` (optionally add yourself as a required reviewer to approve
      each deploy), with **secrets**:
@@ -47,12 +47,12 @@ never builds anything.
    `/opt/hellogram/infra` and stops, listing what's missing (expected the first time).
 7. **On the server** (`ssh deploy@<static-ip>`, then `cd /opt/hellogram`):
    ```bash
-   cp infra/.env.production.example infra/.env.production    # fill every value (TURN_EXTERNAL_IP = static IP)
+   cp infra/.env.production.example infra/.env.production    # fill every value (CLOUDFLARE_TURN_* = the TURN key)
    openssl rand -hex 24 > infra/secrets/postgres_password      # use the same password inside DATABASE_URL
    cp infra/nginx/admin-allowlist.conf.example infra/nginx/admin-allowlist.conf   # your office/VPN IPs
    sh infra/nginx/init-certs.sh                                # first HTTPS certificate (DNS must be live)
    ```
-   Secrets: `openssl rand -base64 48` for `JWT_ACCESS_SECRET`, `HASH_SECRET`, `ADMIN_JWT_SECRET`, `TURN_SHARED_SECRET`;
+   Secrets: `openssl rand -base64 48` for `JWT_ACCESS_SECRET`, `HASH_SECRET`, `ADMIN_JWT_SECRET`;
    `openssl rand -base64 32` for `ATTACHMENT_ENCRYPTION_KEY`. Keep `TRUST_PROXY=1`.
 8. **Deploy again**: *Actions → Deploy → Run workflow* with the latest commit SHA (or push any commit).
 9. **First admin**: `ssh deploy@<static-ip>`, then

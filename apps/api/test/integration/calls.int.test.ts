@@ -1,4 +1,5 @@
-import type { CallLogEntryDto, CallStartDto, IncomingCallEvent } from '@hellogram/shared';
+import { DomainError } from '@hellogram/domain';
+import { ErrorCode, type CallLogEntryDto, type CallStartDto, type IncomingCallEvent } from '@hellogram/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { connectedPair } from './fixtures.js';
 import { createHarness, type Harness, type User } from './harness.js';
@@ -24,7 +25,20 @@ describe('voice calls (rules 29–32)', () => {
     expect(res.body.ringSeconds).toBe(45);
     const [server] = res.body.iceServers;
     expect(server?.urls.every((u) => u.startsWith('turn'))).toBe(true);
-    expect(server?.username).toMatch(new RegExp(`^\\d+:${res.body.callId}$`));
+    expect(server?.username).toMatch(/^\d+:[0-9a-f-]{36}$/);
+  });
+
+  it('rings nobody and answers nothing while the relay is unreachable', async () => {
+    const down = await createHarness({}, { turn: { issue: () => Promise.reject(new DomainError(ErrorCode.SERVICE_UNAVAILABLE, 'Calls are unavailable')) } });
+    try {
+      const { owner, visitor, conversationId } = await connectedPair(down);
+      const res = await start(visitor, conversationId);
+      expect(res.status).toBe(503);
+      expect((await down.db.query('SELECT count(*)::int AS n FROM calls')).rows[0].n).toBe(0);
+      expect(await log(owner)).toEqual([]);
+    } finally {
+      await down.close();
+    }
   });
 
   it('ring → accept → end writes a completed call to both logs', async () => {

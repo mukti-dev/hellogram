@@ -70,9 +70,6 @@ ufw default allow outgoing >/dev/null
 ufw allow OpenSSH >/dev/null
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
-ufw allow 3478 >/dev/null          # call relay (TCP + UDP)
-ufw allow 5349/tcp >/dev/null      # call relay over TLS
-ufw allow 49152:65535/udp >/dev/null  # call relay media
 ufw --force enable >/dev/null
 
 echo "==> SSH: keys only, no root login"
@@ -95,8 +92,6 @@ echo "==> Scheduled jobs"
 cat > /etc/cron.d/hellogram <<CRON
 # Nightly database backup (keeps 7 days in $APP_DIR/backups).
 30 2 * * * $DEPLOY_USER [ -x $APP_DIR/infra/server/backup.sh ] && $APP_DIR/infra/server/backup.sh >> $APP_DIR/backups/backup.log 2>&1
-# Weekly: the call relay re-reads its renewed HTTPS certificate (nginx reloads by itself).
-0 4 * * 1 $DEPLOY_USER cd $APP_DIR && [ -f infra/.env.production ] && docker compose -f infra/docker-compose.prod.yml --env-file infra/.env.production restart coturn >/dev/null 2>&1
 CRON
 chmod 644 /etc/cron.d/hellogram
 

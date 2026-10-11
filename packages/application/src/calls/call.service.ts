@@ -88,6 +88,8 @@ export class CallService {
     );
     if (decision.kind === 'reject') throw new DomainError(decision.code, decision.message);
 
+    // The relay first: if it can't be reached, nothing rings.
+    const iceServers = await this.deps.turn.issue(view.myPersona.id);
     const ringOut = decision.kind === 'ring_out';
     const call = await this.deps.calls.create({
       conversationId,
@@ -118,7 +120,7 @@ export class CallService {
     }
     return {
       callId: call.id,
-      iceServers: this.deps.turn.issue(call.id),
+      iceServers,
       iceTransportPolicy: 'relay',
       ringSeconds: RING_SECONDS,
       callerTune: callerTuneOrNull(view.otherPersona.callerTune),
@@ -128,6 +130,8 @@ export class CallService {
   async accept(actor: Actor, callId: string): Promise<{ iceServers: IceServer[]; iceTransportPolicy: 'relay' }> {
     const call = await this.party(actor, callId, 'callee');
     if (call.suppressed) throw new DomainError(ErrorCode.NOT_FOUND, 'Call not found');
+    // Before answering: if the relay can't be reached, the call keeps ringing instead of hanging up.
+    const iceServers = await this.deps.turn.issue(call.id);
     if (!(await this.deps.lock.acquire(actor.accountId, call.id, LOCK_SECONDS))) {
       throw new DomainError(ErrorCode.CALL_NOT_ALLOWED, 'You’re already on another call');
     }
@@ -140,7 +144,7 @@ export class CallService {
     this.deps.timeouts?.cancel(call.id);
     await this.deps.lock.bindSession(actor.sessionId, call.id, LOCK_SECONDS);
     await this.publish('call.accepted', call, { acceptedBySessionId: actor.sessionId });
-    return { iceServers: this.deps.turn.issue(call.id), iceTransportPolicy: 'relay' };
+    return { iceServers, iceTransportPolicy: 'relay' };
   }
 
   /** Callee declines. The caller just sees "no answer" (rule 31). */

@@ -38,11 +38,10 @@ services:
     volumes:
       - letsencrypt:/etc/letsencrypt
       - certbot-www:/var/www/certbot
-      - ./nginx/certbot-hooks:/hooks:ro
     entrypoint:
       - /bin/sh
       - -c
-      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --deploy-hook 'sh /hooks/copy-for-coturn.sh' --quiet; sleep 12h & wait $${!}; done"
+      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
 
   api:
     <<: *app
@@ -86,23 +85,7 @@ services:
     volumes: [redis-data:/data]
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, retries: 10 }
 
-  coturn:
-    image: coturn/coturn:4.18-alpine
-    restart: unless-stopped
-    network_mode: host
-    # Server-specific values come from .env.production, so the config file needs no edits.
-    command:
-      - -c
-      - /etc/coturn/turnserver.conf
-      - --external-ip=${TURN_EXTERNAL_IP}
-      # Relay only on the server's own network address. Left to itself, coturn also relays on Docker's
-      # bridges (172.17/172.18) and IPv6, which the other side can't reach — calls then break up or drop.
-      - --relay-ip=${TURN_RELAY_IP:?set TURN_RELAY_IP (the server's private IP) in infra/.env.production}
-      - --static-auth-secret=${TURN_SHARED_SECRET}
-      - --realm=${SITE_DOMAIN}
-    volumes:
-      - ./coturn/turnserver.prod.conf:/etc/coturn/turnserver.conf:ro
-      - letsencrypt:/etc/letsencrypt:ro
+  # Calls are relayed by Cloudflare's TURN service (CLOUDFLARE_TURN_* in .env.production), not this server.
 
 secrets:
   postgres_password:

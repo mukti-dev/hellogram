@@ -31,6 +31,7 @@ export * from './persistence/prisma-pin.repository.js';
 export * from './persistence/prisma-call.repository.js';
 export * from './redis/redis-call-lock.js';
 export * from './security/coturn-credentials.js';
+export * from './security/cloudflare-turn.js';
 export * from './events/in-process-call-timeouts.js';
 export * from './persistence/prisma-billing.repository.js';
 export * from './billing/razorpay.provider.js';

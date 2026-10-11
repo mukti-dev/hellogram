@@ -10,7 +10,8 @@ const production = {
   JWT_ACCESS_SECRET: 'a'.repeat(64),
   HASH_SECRET: 'b'.repeat(64),
   TRUST_PROXY: '1',
-  TURN_SHARED_SECRET: 'c'.repeat(64),
+  CLOUDFLARE_TURN_KEY_ID: 'turn-key-id',
+  CLOUDFLARE_TURN_API_TOKEN: 'turn-api-token',
   PHONE_AUTH_PROVIDER: 'otp',
   SMS_PROVIDER: 'twofactor',
   TWOFACTOR_API_KEY: 'key',
@@ -42,6 +43,11 @@ describe('production settings', () => {
   it('refuse the development stand-ins that would log codes or fake payments', () => {
     expect(problems({ EMAIL_PROVIDER: 'console' }).join()).toMatch(/EMAIL_PROVIDER/);
     expect(problems({ BILLING_PROVIDER: 'dev' }).join()).toMatch(/BILLING_PROVIDER/);
+  });
+
+  it('need Cloudflare TURN for calls (no own relay in production)', () => {
+    expect(problems({ CLOUDFLARE_TURN_KEY_ID: '', CLOUDFLARE_TURN_API_TOKEN: '' }).join()).toMatch(/CLOUDFLARE_TURN_KEY_ID/);
+    expect(problems({ CLOUDFLARE_TURN_API_TOKEN: '' }).join()).toMatch(/CLOUDFLARE_TURN_API_TOKEN/);
   });
 
   it('still need the keys once a real provider is chosen', () => {

@@ -25,7 +25,14 @@ export const apiEnvSchema = baseEnvSchema
     /** Number code digits (6 now, 7 once ~60% of the 6-digit space is used). */
     CODE_DIGITS: z.coerce.number().int().min(6).max(7).default(6),
     MEDIA_DIR: z.string().default('.data/media'),
-    /** Comma-separated TURN URLs handed to clients (relay-only calls). */
+    /**
+     * Call relay (calls are relay-only). Production: Cloudflare's TURN service — the TURN key's id and
+     * API token from the Cloudflare dashboard (Realtime → TURN). Without them (development, CI) the
+     * local coturn below is used: TURN_URLS + TURN_SHARED_SECRET.
+     */
+    CLOUDFLARE_TURN_KEY_ID: z.string().optional(),
+    CLOUDFLARE_TURN_API_TOKEN: z.string().optional(),
+    /** Comma-separated local coturn URLs (development, CI). */
     TURN_URLS: z
       .string()
       .default('turn:localhost:3478?transport=udp,turn:localhost:3478?transport=tcp')
@@ -81,8 +88,11 @@ export const apiEnvSchema = baseEnvSchema
     if (env.NODE_ENV === 'production' && env.RATE_LIMIT_MULTIPLIER !== 1) {
       ctx.addIssue({ code: 'custom', path: ['RATE_LIMIT_MULTIPLIER'], message: 'must be 1 in production' });
     }
-    if (env.NODE_ENV === 'production' && env.TURN_SHARED_SECRET === 'dev-turn-secret-change-me') {
-      ctx.addIssue({ code: 'custom', path: ['TURN_SHARED_SECRET'], message: 'set a real secret in production' });
+    if (Boolean(env.CLOUDFLARE_TURN_KEY_ID) !== Boolean(env.CLOUDFLARE_TURN_API_TOKEN)) {
+      ctx.addIssue({ code: 'custom', path: ['CLOUDFLARE_TURN_API_TOKEN'], message: 'set both CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN' });
+    }
+    if (env.NODE_ENV === 'production' && !env.CLOUDFLARE_TURN_KEY_ID) {
+      ctx.addIssue({ code: 'custom', path: ['CLOUDFLARE_TURN_KEY_ID'], message: 'calls need Cloudflare TURN in production (CLOUDFLARE_TURN_KEY_ID and CLOUDFLARE_TURN_API_TOKEN)' });
     }
     if (env.NODE_ENV === 'production') {
       if (env.SMS_PROVIDER === 'console') ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'console logs OTPs — not allowed in production' });
