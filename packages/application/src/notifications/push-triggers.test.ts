@@ -24,6 +24,7 @@ describe('incoming-call notifications', () => {
         kind: 'call',
         callId: 'call-1',
         declineToken: 'key',
+        caller: 'Amit Kumar',
         title: 'Incoming call from Amit Kumar',
         body: 'to C7654321D',
         url: '/inbox?call=call-1',

@@ -37,21 +37,35 @@ describe('FcmSender', () => {
 });
 
 describe('FCM message shape', () => {
-  it('rings calls loudly and replaces them with "Missed call" via the same tag', () => {
-    const ring = buildMessage('t', { kind: 'call', callId: 'k1', title: 'Incoming call from Amit', body: 'to A123', url: '/inbox?call=k1', tag: 'call-k1', ttlSeconds: 45 });
-    expect(ring).toMatchObject({
+  const call = { kind: 'call', callId: 'k1', declineToken: 'd'.repeat(32), caller: 'Amit', title: 'Incoming call from Amit', body: 'to A123', url: '/inbox?call=k1', tag: 'call-k1', ttlSeconds: 45 } as const;
+
+  it('rings iPhone calls as a time-sensitive notification and replaces them with "Missed call" via the same tag', () => {
+    expect(buildMessage('t', call, 'ios')).toMatchObject({
+      notification: { title: 'Incoming call from Amit' },
       data: { kind: 'call', callId: 'k1' },
-      android: { priority: 'HIGH', ttl: '45s', notification: { channel_id: 'calls', tag: 'call-k1' } },
       apns: { headers: { 'apns-collapse-id': 'call-k1' }, payload: { aps: { 'interruption-level': 'time-sensitive' } } },
     });
     const missed = buildMessage('t', { kind: 'call_ended', missed: true, callId: 'k1', title: 'Missed call', body: '', url: '/calls', tag: 'call-k1' });
     expect(missed).toMatchObject({ notification: { title: 'Missed call' }, android: { notification: { channel_id: 'messages', tag: 'call-k1' } } });
   });
 
-  it('sends a call answered elsewhere as data only (nothing to show)', () => {
-    const quiet = buildMessage('t', { kind: 'call_answered', callId: 'k1', title: 'Call ended', body: '', url: '/calls' });
+  it('sends Android calls as high-priority data, for the app to show its own full-screen call', () => {
+    const ring = buildMessage('t', call, 'android');
+    expect(ring).not.toHaveProperty('notification');
+    expect(ring).toEqual({
+      token: 't',
+      data: { kind: 'call', callId: 'k1', declineToken: 'd'.repeat(32), caller: 'Amit', title: 'Incoming call from Amit', body: 'to A123', url: '/inbox?call=k1', tag: 'call-k1' },
+      android: { priority: 'HIGH', ttl: '45s' },
+    });
+  });
+
+  it('sends a call answered elsewhere as data only (nothing to show), high priority on Android to stop the ringing', () => {
+    const answered = { kind: 'call_answered', callId: 'k1', title: 'Call ended', body: '', url: '/calls' } as const;
+    const quiet = buildMessage('t', answered, 'ios');
     expect(quiet).not.toHaveProperty('notification');
     expect(quiet).toMatchObject({ data: { kind: 'call_answered' }, apns: { payload: { aps: { 'content-available': 1 } } } });
+    expect(quiet?.data).not.toHaveProperty('title');
+    expect(buildMessage('t', answered, 'android')).toMatchObject({ android: { priority: 'HIGH' } });
   });
 
   it('reads the key file as JSON or base64', () => {
