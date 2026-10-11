@@ -38,7 +38,7 @@ export class FcmSender implements NativePushSender {
   ) {}
 
   async send(token: NativePushTokenRecord, payload: PushPayload): Promise<'ok' | 'gone'> {
-    const message = buildMessage(token.token, payload);
+    const message = buildMessage(token.token, payload, token.platform);
     if (!message) return 'ok';
     const response = await this.fetchImpl(`https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`, {
       method: 'POST',
@@ -89,28 +89,36 @@ const data = (payload: PushPayload): Record<string, string> =>
       declineToken: payload.declineToken,
       missed: payload.missed === undefined ? undefined : String(payload.missed),
       tag: payload.tag,
+      title: payload.kind === 'call' ? payload.title : undefined,
+      body: payload.kind === 'call' ? payload.body : undefined,
+      caller: payload.caller,
     }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
 
 /**
  * One FCM message for one phone:
- *  - a ringing call: shown at once with high priority (Android "calls" channel, iOS time-sensitive);
- *  - a call that was answered elsewhere or ended normally: data only, so an open app can tidy up;
+ *  - a ringing call: on Android data only, so the app itself shows the full-screen call with
+ *    Answer / Decline even when it isn't running; on iPhone a time-sensitive notification;
+ *  - a call that was answered elsewhere or ended normally: data only, so the app can stop ringing
+ *    (high priority on Android, where a dozing phone would otherwise ring on);
  *  - "Missed call", messages, requests, billing: a normal notification. The same `tag` replaces
  *    the one before it (one notification per chat, the ringing call becomes "Missed call").
  */
-export function buildMessage(token: string, payload: PushPayload): Record<string, unknown> | null {
+export function buildMessage(token: string, payload: PushPayload, platform: 'ios' | 'android' = 'android'): Record<string, unknown> | null {
   const ttl = payload.ttlSeconds ?? 60 * 60;
   const quiet = (payload.kind === 'call_ended' && !payload.missed) || payload.kind === 'call_answered';
   if (quiet) {
     return {
       token,
       data: data(payload),
-      android: { priority: 'NORMAL', ttl: `${ttl}s` },
+      android: { priority: platform === 'android' ? 'HIGH' : 'NORMAL', ttl: `${ttl}s` },
       apns: { headers: { 'apns-push-type': 'background', 'apns-priority': '5' }, payload: { aps: { 'content-available': 1 } } },
     };
   }
   const ringing = payload.kind === 'call';
+  if (ringing && platform === 'android') {
+    return { token, data: data(payload), android: { priority: 'HIGH', ttl: `${ttl}s` } };
+  }
   const tag = payload.tag?.slice(0, 64);
   return {
     token,

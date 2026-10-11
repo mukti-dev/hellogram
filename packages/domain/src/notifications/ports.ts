@@ -13,6 +13,8 @@ export interface PushPayload {
   callId?: string;
   /** Lets the notification's Decline button refuse this one ringing call without a session. */
   declineToken?: string;
+  /** Ringing call: the caller's display name for the phone's call screen (absent when the chat is locked). */
+  caller?: string;
   /** Shown as "Missed call…" (true) or cleared quietly (false). */
   missed?: boolean;
   /** Drop the push if it can't be delivered in time (a call rings for 45 s). Default 1 hour. */

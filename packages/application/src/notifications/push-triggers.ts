@@ -81,6 +81,7 @@ export class PushTriggers {
         kind: 'call',
         callId: p.callId,
         ...(p.declineToken ? { declineToken: p.declineToken } : {}),
+        ...(p.calleeLocked ? {} : { caller: p.caller.displayName }),
         title: p.calleeLocked ? 'Incoming call' : `Incoming call from ${p.caller.displayName}`,
         body: p.calleeLocked ? 'Tap to answer in Hellogram' : `to ${p.callee.code}`,
         url: `/inbox?call=${p.callId}`,
