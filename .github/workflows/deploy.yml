@@ -81,9 +81,7 @@ jobs:
           rsync -az --relative -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes" \
             infra/docker-compose.prod.yml \
             infra/.env.production.example \
-            infra/coturn/turnserver.prod.conf \
             infra/nginx/init-certs.sh \
-            infra/nginx/certbot-hooks/ \
             infra/nginx/admin-allowlist.conf.example \
             infra/server/ \
             "$SSH_USER@$SSH_HOST:/opt/hellogram/"

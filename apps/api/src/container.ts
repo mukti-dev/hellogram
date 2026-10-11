@@ -21,7 +21,7 @@ import {
   type RequestTxRepos,
 } from '@hellogram/application';
 import { createPrismaClient } from '@hellogram/db';
-import { systemClock, type AuthRepositories, type BlobStore, type HostedSmsVerification, type PendingDeviceLogin, type PendingSignup, type PhoneIdentityVerifier } from '@hellogram/domain';
+import { systemClock, type AuthRepositories, type BlobStore, type HostedSmsVerification, type PendingDeviceLogin, type PendingSignup, type PhoneIdentityVerifier, type TurnCredentialIssuer } from '@hellogram/domain';
 import {
   ConsoleEmailProvider,
   DisabledEmailProvider,
@@ -42,6 +42,7 @@ import {
   PrismaNativePushTokenRepository,
   PrismaPushSubscriptionRepository,
   RazorpayBillingProvider,
+  CloudflareTurnIssuer,
   CoturnCredentialIssuer,
   InProcessCallTimeouts,
   PrismaCallRepository,
@@ -142,6 +143,8 @@ export interface ContainerOverrides {
   blobs?: BlobStore;
   /** Tests: stand-in for Message Central. */
   hostedSms?: HostedSmsVerification;
+  /** Tests: stand-in for the call relay's credentials (Cloudflare TURN). */
+  turn?: TurnCredentialIssuer;
 }
 
 export function createContainer(env: ApiEnv, logger: Logger, overrides: ContainerOverrides = {}): AppContainer {
@@ -332,7 +335,11 @@ export function createContainer(env: ApiEnv, logger: Logger, overrides: Containe
     chat: chatService,
     lock: new RedisCallLock(redis),
     limiter,
-    turn: new CoturnCredentialIssuer(env.TURN_URLS, env.TURN_SHARED_SECRET),
+    turn:
+      overrides.turn ??
+      (env.CLOUDFLARE_TURN_KEY_ID && env.CLOUDFLARE_TURN_API_TOKEN
+        ? new CloudflareTurnIssuer(env.CLOUDFLARE_TURN_KEY_ID, env.CLOUDFLARE_TURN_API_TOKEN)
+        : new CoturnCredentialIssuer(env.TURN_URLS, env.TURN_SHARED_SECRET)),
     events,
     clock,
     crypto,

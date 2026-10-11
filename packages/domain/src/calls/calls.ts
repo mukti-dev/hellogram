@@ -76,9 +76,12 @@ export interface CallLock {
   sessionCall(sessionId: string): Promise<string | null>;
 }
 
-/** Short-lived TURN credentials bound to a call (coturn REST API / use-auth-secret). */
+/**
+ * Short-lived TURN credentials for one side of a call: Cloudflare's TURN service in production,
+ * a local coturn (use-auth-secret) in development and CI. `label` names whose credentials they are.
+ */
 export interface TurnCredentialIssuer {
-  issue(callId: string): IceServer[];
+  issue(label: string): Promise<IceServer[]>;
 }
 
 /** Fires the 45 s no-answer timeout. */
