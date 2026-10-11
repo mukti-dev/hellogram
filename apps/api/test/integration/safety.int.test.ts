@@ -149,7 +149,9 @@ describe('retention sweeper and metadata purge (rules 21–22, §9)', () => {
 
     expect(await h.container.maintenanceService.expireContent()).toBeGreaterThanOrEqual(1);
     const page = await owner.request<{ items: { id: string; body: string | null }[] }>({ method: 'GET', url: `/v1/conversations/${conversationId}/messages` });
-    expect(page.body.items.find((m) => m.id === old.body.id)?.body ?? null).toBeNull();
+    // Gone for both sides: not listed at all (an empty bubble otherwise), the fresh one still is.
+    expect(page.body.items.some((m) => m.id === old.body.id)).toBe(false);
+    expect(page.body.items.some((m) => m.id === fresh.body.id)).toBe(true);
     expect(JSON.stringify(page.body)).not.toContain('old secret');
     const kept = await h.db.query(`SELECT body, "expiredAt" FROM messages WHERE id = $1`, [old.body.id]);
     expect(kept.rows[0].body).toBe('old secret');

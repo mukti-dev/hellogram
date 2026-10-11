@@ -95,9 +95,11 @@ function toView(row: ConversationRow, myPersonaId: string): ConversationView | n
   };
 }
 
-/** Visibility of messages for one member (suppressed, cleared, hidden). */
+/** Visibility of messages for one member (suppressed, cleared, hidden, past the chat's history). */
 const visibleTo = (personaId: string, clearedBefore: Date | null): Prisma.MessageWhereInput => ({
   OR: [{ suppressed: false }, { senderPersonaId: personaId }],
+  // Rule 22: expired messages are gone for both sides (not shown as empty bubbles).
+  expiredAt: null,
   ...(clearedBefore ? { createdAt: { gt: clearedBefore } } : {}),
   hiddenFor: { none: { personaId } },
 });
@@ -130,7 +132,7 @@ export class PrismaConversationRepository implements ConversationRepository {
                (SELECT count(*)::int FROM messages u
                  WHERE u."conversationId" = cm."conversationId"
                    AND u."senderPersonaId" <> cm."personaId"
-                   AND u.suppressed = false AND u.type = 'text' AND u."deletedForEveryoneAt" IS NULL
+                   AND u.suppressed = false AND u.type = 'text' AND u."deletedForEveryoneAt" IS NULL AND u."expiredAt" IS NULL
                    AND (cm."clearedBefore" IS NULL OR u."createdAt" > cm."clearedBefore")
                    AND (cm."lastReadMessageId" IS NULL
                         OR u."createdAt" > (SELECT r."createdAt" FROM messages r WHERE r.id = cm."lastReadMessageId"))
@@ -144,6 +146,7 @@ export class PrismaConversationRepository implements ConversationRepository {
           SELECT m.id, m."createdAt" FROM messages m
           WHERE m."conversationId" = cm."conversationId"
             AND (m.suppressed = false OR m."senderPersonaId" = cm."personaId")
+            AND m."expiredAt" IS NULL
             AND (cm."clearedBefore" IS NULL OR m."createdAt" > cm."clearedBefore")
             AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h."messageId" = m.id AND h."personaId" = cm."personaId")
           ORDER BY m."createdAt" DESC, m.id DESC LIMIT 1
